@@ -1,0 +1,2898 @@
+Index: testbin/forkbomb/forkbomb.c
+===================================================================
+--- testbin/forkbomb/forkbomb.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/forkbomb/forkbomb.c	(.../trunk)	(revision 95)
+@@ -29,9 +29,9 @@
+ 	int i;
+ 
+ 	while (1) {
+-		printf("%d forking\n", getpid());
++		//printf("%d forking\n", getpid());
+ 		fork();
+-		printf("%d running\n", getpid());
++		//printf("%d running\n", getpid());
+ 		pid = getpid();
+ 
+ 		/* Make sure each fork has its own address space. */
+Index: testbin/fork/fork.c
+===================================================================
+--- testbin/fork/fork.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/fork/fork.c	(.../trunk)	(revision 95)
+@@ -76,19 +76,24 @@
+     int pid0, pid1, pid2;
+ 
+ 	pid0 = dofork();
++	//printf("pid = %d \n",pid);
+ 	putchar('0');
+ 	check();
++	//printf("pid = %d \n",pid);
+ 	putchar('a');
+ 
+ 	pid1 = dofork();
++	//printf("pid = %d \n",pid);
+ 	putchar('1');
+ 	check();
++	//printf("pid = %d \n",pid);
+ 	putchar('b');
+ 
+-	pid2 = dofork();
++    pid2 = dofork();
++	//printf("pid = %d \n",pid);
+ 	putchar('2');
+ 	check();
+-	//putchar('c');
++	putchar('c'); 
+ 
+ 	dowait(pid2);
+ 	dowait(pid1);
+Index: testbin/printf/printf.c
+===================================================================
+--- testbin/printf/printf.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/printf/printf.c	(.../trunk)	(revision 95)
+@@ -1,17 +1,30 @@
+ #include <unistd.h>
+ #include <stdio.h>
++#include <err.h>
++#include <stdlib.h>
+ 
+ int
+-main(void)
++main(int argc, char *argv[])
+ {
+ 		
+-        printf("printf works!\n");
+-        printf("Enter your character:");
++     
+         int i = 0;
+         /*for (i=0; i <1000; i++)
+         	printf("the number is %d", i); */
++        if (argc != 1) {
++                errx(1, "Usage: add num1 num2");
++        }
++
++        printf("printf works!\n");
+         printf("Enter your character:");
++
+         int c = getchar();
+         printf("The character read %d\n",c); 
++
++        int a = 2;
++        int b =3;
++        printf("Now going to add %d with %d\n", a, b);
++        printf ("the result is %d\n",a+b);
++
+ 	return 0;
+ }
+Index: testbin/printf/depend.mk
+===================================================================
+--- testbin/printf/depend.mk	(.../tags/asst3-start)	(revision 95)
++++ testbin/printf/depend.mk	(.../trunk)	(revision 95)
+@@ -8,5 +8,7 @@
+  $(OSTREE)/include/kern/unistd.h \
+  $(OSTREE)/include/kern/ioctl.h \
+  $(OSTREE)/include/stdio.h \
+- $(OSTREE)/include/stdarg.h
++ $(OSTREE)/include/stdarg.h \
++ $(OSTREE)/include/err.h \
++ $(OSTREE)/include/stdlib.h
+ 
+Index: testbin/sty/depend.mk
+===================================================================
+--- testbin/sty/depend.mk	(.../tags/asst3-start)	(revision 95)
++++ testbin/sty/depend.mk	(.../trunk)	(revision 95)
+@@ -1,12 +1,14 @@
+ 
+ sty.o: \
+  sty.c \
+- $(OSTREE)/include/unistd.h \
++ $(OSTREE)/include/stdio.h \
+  $(OSTREE)/include/sys/types.h \
+  $(OSTREE)/include/machine/types.h \
+  $(OSTREE)/include/kern/types.h \
++ $(OSTREE)/include/stdarg.h \
++ $(OSTREE)/include/stdlib.h \
++ $(OSTREE)/include/unistd.h \
+  $(OSTREE)/include/kern/unistd.h \
+  $(OSTREE)/include/kern/ioctl.h \
+- $(OSTREE)/include/err.h \
+- $(OSTREE)/include/stdarg.h
++ $(OSTREE)/include/err.h
+ 
+Index: testbin/sty/sty.c
+===================================================================
+--- testbin/sty/sty.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/sty/sty.c	(.../trunk)	(revision 95)
+@@ -7,12 +7,16 @@
+  * are complete. It may be helpful for scheduler performance analysis.
+  */
+ 
++#include <stdio.h>
++#include <stdlib.h>
+ #include <unistd.h>
+ #include <err.h>
+ 
+ static char *hargv[2] = { (char *)"hog", NULL };
+ 
+-#define MAXPROCS  6
++#define MAXPROCS        9
++#define DEFAULTPROCS    6
++
+ static int pids[MAXPROCS], npids;
+ 
+ static
+@@ -35,10 +39,10 @@
+ }
+ 
+ static
+-void
++int
+ waitall(void)
+ {
+-	int i, status;
++	int i, status, n = 0;
+ 	for (i=0; i<npids; i++) {
+ 		if (waitpid(pids[i], &status, 0)<0) {
+ 			warn("waitpid for %d", pids[i]);
+@@ -46,19 +50,52 @@
+ 		else if (status != 0) {
+ 			warnx("pid %d: exit %d", pids[i], status);
+ 		}
++		else {
++		    n++;
++		}
+ 	}
++	
++	return n;
+ }
+ 
++static
++void 
++usage(void)
++{
++    printf("usage: sty [NUM]\n"
++           "  NUM: must be from 1 to 9 inclusive\n");
++    exit(1);
++}
++
+ int
+-main()
++main(int argc, const char *argv[])
+ {
+-	hog();
+-	hog();
+-	hog();
+-	hog();
+-	hog();
+-	hog();
++    int nhogs = DEFAULTPROCS;
++    
++    if ( argc == 2 ) {
++        int tmp = atoi(argv[1]);
++        if ( tmp <= 0 || tmp > MAXPROCS ) {
++            usage();
++        }
++        nhogs = tmp;
++    } 
++    else if ( argc > 2 ) {
++        usage();
++    }
+ 
+-	waitall();
++    while ( nhogs > 0 ) {
++	    hog();
++	    nhogs--;
++	}
++	nhogs = waitall();
++	
++	if ( nhogs == 0 ) {
++	    printf("who let the hogs out?!\n");
++	} else if ( nhogs == 1 ) {
++	    printf("one lonely hog went back in the pen.\n");
++	} else {
++	    printf("%d hogs are back in the pen.\n", nhogs);
++	}
++	
+ 	return 0;
+ }
+Index: testbin/add/add.c
+===================================================================
+--- testbin/add/add.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/add/add.c	(.../trunk)	(revision 95)
+@@ -13,12 +13,12 @@
+ int
+ main(int argc, char *argv[])
+ {
+-	int i, j;
+-
+-	if (argc != 3) {
++	int i=1, j=2;
++	printf("helloooooo  %d\n",argc);
++	if (argc!=3) {
+ 		errx(1, "Usage: add num1 num2");
+ 	}
+-
++	printf("i get this %s and %s\n",argv[1],argv[2]);
+ 	i = atoi(argv[1]);
+ 	j = atoi(argv[2]);
+ 
+Index: testbin/malloctest/malloctest.c
+===================================================================
+--- testbin/malloctest/malloctest.c	(.../tags/asst3-start)	(revision 95)
++++ testbin/malloctest/malloctest.c	(.../trunk)	(revision 95)
+@@ -146,6 +146,7 @@
+ 	printf("*** Malloc test 1 ***\n");
+ 	printf("Allocating %u bytes\n", BIGSIZE);
+ 	x = malloc(BIGSIZE);
++	printf("came out of malloc\n");
+ 	if (x==NULL) {
+ 		printf("FAILED: malloc failed\n");
+ 		return;
+Index: testbin/Makefile
+===================================================================
+--- testbin/Makefile	(.../tags/asst3-start)	(revision 95)
++++ testbin/Makefile	(.../trunk)	(revision 95)
+@@ -54,6 +54,8 @@
+ 
+ 	(cd bigprog && $(MAKE) $@)
+ 	(cd triplebigprog && $(MAKE) $@)
++	(cd vectormult && $(MAKE) $@)
++
+ # But not:
+ #    malloctest     (no malloc/free until you write it)
+ #    userthreads    (no support in kernel API in base system)
+Index: kern/include/thread.h
+===================================================================
+--- kern/include/thread.h	(.../tags/asst3-start)	(revision 95)
++++ kern/include/thread.h	(.../trunk)	(revision 95)
+@@ -54,6 +54,10 @@
+ 	struct addrspace *
+ 	t_vmspace;
+ 
++	// argumetn handeling
++	char ** args;
++	int argc;
++
+ 	/*
+ 	 * This is public because it isn't part of the thread system,
+ 	 * and is manipulated by the virtual filesystem (VFS) code.
+Index: kern/include/syscall.h
+===================================================================
+--- kern/include/syscall.h	(.../tags/asst3-start)	(revision 95)
++++ kern/include/syscall.h	(.../trunk)	(revision 95)
+@@ -13,5 +13,6 @@
+ int sys_exit(int ret, int *retval);
+ int sys_getpid(int *retval);
+ int sys_execv(char* progname, char** arg);
++int sys_sbrk(intptr_t amount, int * retval);
+ 
+ #endif /* _SYSCALL_H_ */
+Index: kern/include/vm.h
+===================================================================
+--- kern/include/vm.h	(.../tags/asst3-start)	(revision 95)
++++ kern/include/vm.h	(.../trunk)	(revision 95)
+@@ -3,6 +3,8 @@
+ 
+ #include <machine/vm.h>
+ 
++
++
+ /*
+  * VM system-related definitions.
+  *
+Index: kern/include/page_table.h
+===================================================================
+--- kern/include/page_table.h	(.../tags/asst3-start)	(revision 0)
++++ kern/include/page_table.h	(.../trunk)	(revision 95)
+@@ -0,0 +1,70 @@
++#ifndef _PAGE_TABLE_H_
++#define _PAGE_TABLE_H_
++
++#include <machine/ktypes.h>
++#include <machine/types.h>
++
++
++#define FRAME_NUMBER 0x000fffff	/* mask for getting frame number from PTE */
++#define SECOND_INDEX 0x000003ff /* mask for getting index o second level PT */
++#define PTE_READONLY 0x1		/* mask for mark PTE as readonly */
++
++enum {
++	PTE_FOUND,
++	WRITE_PERMITTED, // return when faulttype is readonly type pte found is implicit
++	WRITE_NOT_PERMITTED,	//return when faulttype is readonly type pte found is implicit
++	NO_SECOND_LEVEL_PT,
++	INVALID,
++	SWAPPED
++};
++
++
++
++/// Allocate master (first) level page table and initialize all fields to zero
++u_int32_t * pt_create();
++
++
++int pt_copy(u_int32_t * old_pt, u_int32_t ** new_pt); 
++
++
++/// when vm_fault happen we pass the fault address to get the frame number correpoding 
++/// to that page if frame exists then we fill up *entrylo and return PTE_FOUND  otherwise do these things in fault handler: 
++/// if return = NO_SECOND_LEVEL_PT: 1) Allocate second level PT 
++///									2) update first_pt entry correponding to the faultaddress
++///									3) Allocate a frame for user (if no frame availabe need to schedule swapping laterr)
++///									4) read from disk to user frame if needed (mapped region is CODE or DATA);
++///									5) Update the second level page table correponding to the faultaddress
++///									6) update TLB for faultaddress
++
++/// if return = INVALID: No frame found in memory:  1) Allocate a frame for user if no frame availabe need to schedule swapping
++///													2) read from disk to user frame;
++///													3) Update the second level page table correponding to the faultaddress
++///													4) update TLB for fault addr 
++/// if return = SWAPPED: // decide later
++int32_t pt_lookup (u_int32_t * page_table , vaddr_t faultaddress, int faulttype, int * entrylo);
++
++
++
++void update_first_pt_entry(u_int32_t * page_table, vaddr_t faultaddress, vaddr_t second_pt);
++
++
++void update_second_pt_entry(u_int32_t * page_table, vaddr_t faultaddress, vaddr_t frameaddress, u_int32_t flags, int * entrylo);
++
++
++// Take a page table as an argument and make all PTEs to readonly.
++void make_readonly(u_int32_t * page_table, int coremap_update);
++
++
++int pt_copy_on_write (u_int32_t * page_table, vaddr_t faultaddress, int * entrylo);
++
++void pt_deep_destroy(u_int32_t * page_table);
++
++void pt_destroy(u_int32_t * page_table);
++
++
++
++#endif /* _PAGE_TABLE_H_ */
++
++
++
++
+Index: kern/include/addrspace.h
+===================================================================
+--- kern/include/addrspace.h	(.../tags/asst3-start)	(revision 95)
++++ kern/include/addrspace.h	(.../trunk)	(revision 95)
+@@ -2,6 +2,7 @@
+ #define _ADDRSPACE_H_
+ 
+ #include <vm.h>
++#include <elf.h>
+ #include "opt-dumbvm.h"
+ 
+ struct vnode;
+@@ -12,19 +13,42 @@
+  *
+  * You write this.
+  */
++ struct region {
++ 	u_int32_t p_vaddr;
++ 	u_int32_t p_offset;
++ 	u_int32_t p_filesz;
++ 	u_int32_t p_memsz;
++ 	u_int32_t p_flags;
++ };
+ 
+ struct addrspace {
+-#if OPT_DUMBVM
++//#if OPT_DUMBVM
++	/*vaddr_t as_vbase1;
++	paddr_t as_pbase1;
++	size_t as_npages1;
++	vaddr_t as_vbase2;
++	paddr_t as_pbase2;
++	size_t as_npages2;
++	paddr_t as_stackpbase; */
++//#else
++	/* Put stuff here for your VM system */
++//#endif
++	int as_segnum;
++	//vaddr_t * as_vbase;
+ 	vaddr_t as_vbase1;
+ 	paddr_t as_pbase1;
+ 	size_t as_npages1;
+ 	vaddr_t as_vbase2;
+ 	paddr_t as_pbase2;
+ 	size_t as_npages2;
++	struct region * as_region;
++	vaddr_t as_stackvbase;
++	vaddr_t as_heapbase;
++	vaddr_t as_heapvtop;
++	vaddr_t breakaddr;
+ 	paddr_t as_stackpbase;
+-#else
+-	/* Put stuff here for your VM system */
+-#endif
++	struct vnode *v;
++	u_int32_t * page_table;
+ };
+ 
+ /*
+@@ -74,7 +98,10 @@
+ int		  as_prepare_load(struct addrspace *as);
+ int		  as_complete_load(struct addrspace *as);
+ int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
++int 	  as_load_page (vaddr_t faultaddress, int mapped_region, vaddr_t *newframe);
++int 	  as_define_heap(struct addrspace *as, vaddr_t *heapptr);
+ 
++
+ /*
+  * Functions in loadelf.c
+  *    load_elf - load an ELF user program executable into the current
+Index: kern/main/main.c
+===================================================================
+--- kern/main/main.c	(.../tags/asst3-start)	(revision 95)
++++ kern/main/main.c	(.../trunk)	(revision 95)
+@@ -23,6 +23,8 @@
+ #include <hashtable.h>
+ #include <array.h>
+ #include <synch.h>
++#include <page_table.h>
++#include <vnode.h>
+ 
+ /*
+  * These two pieces of data are maintained by the makefiles and build system.
+@@ -85,6 +87,7 @@
+ 	
+ 
+ 	ram_bootstrap();
++	//vm_bootstrap();
+ 
+ 	tlb_lock=lock_create("TLB LOCK");
+ 	scheduler_bootstrap();
+@@ -254,8 +257,8 @@
+ 	*tf_copy = *tf; // short memcopy
+ 
+ 
+-	struct thread * child_thread;
+-	err = thread_fork(NULL, tf_copy, 0, md_forkentry, &child_thread);
++	struct thread * childthread;
++	err = thread_fork(NULL, tf_copy, 0, md_forkentry, &childthread);
+ 	if(err)
+ 	{
+ 		
+@@ -295,7 +298,16 @@
+ 		return err;
+ 	}*/
+ 
+-	*retval = child_thread->tid;
++	// Now we are sure that address space for child has been set up completely so we need to do followings
++	//1) Make both parent and child PTEs read only
++	//2) Increment reference count of involving frame in coremap by 1;
++	//3) Make all the entries in TLB to be readonly.
++	make_readonly(curthread->t_vmspace->page_table, 0);
++	make_readonly(childthread->t_vmspace->page_table, 1);
++	as_make_readonly();
++	//as_activate(curthread->t_vmspace);
++
++	*retval = childthread->tid;
+ 	
+ 	splx(s);
+ 	return 0;
+@@ -457,55 +469,31 @@
+ 
+ 	lock_acquire(tlb_lock);
+ 
+-	//kprintf("EXE -> 0x%x -> [%s]\n ------\n",progname,progname);
+-	//kprintf("0) EXECV ENTERING DONE  	[%d] \n",curthread->tid);
+-
+-
+ 	/**** COPYING DATA FROM USER LEVEL****/
+ 	ARG = (vaddr_t*) kmalloc(sizeof(vaddr_t)*16);
+-	kprintf("	ARG <0x%x>\n",ARG);
++
+ 	for(i=0;i<10;i++)
+ 		ARG[i]=NULL;
+ 	
++	if (ARG==NULL){
+ 
+-	if (ARG==NULL){
+-		//kprintf("	ENOME ERRPR\n");
+ 		result= ENOMEM;
+ 		goto fail;
+ 	}
+ 	PROGNAME= (char *) kmalloc(sizeof(char)*30);
+-	//kprintf("	PROGNAME <0x%x>\n",PROGNAME);
++
+ 	if (PROGNAME==NULL){
+-		//kprintf("	ENOME ERRPR\n");
+ 		result=ENOMEM;
+ 		goto fail;
+ 	}
+-	 //cheking if memory allocation was successful
+-	//kprintf(" kernel progname  %s \n",progname);
+-
+ 	result=copyinstr((const_userptr_t) progname, PROGNAME, 30, &actual);
+-	//kprintf(" kernel progname  %s my momy 0x%d me 0x%d \n",progname,curthread->parent,curthread->tid);
+ 	if(result){
+ 		goto fail;
+ 	}
+ 
+-	//kprintf("	progname  %s \n",PROGNAME);
++	
+ 
+-  	// copying data from user space to kernel space
+-  	/*kprintf(" ARG  0x%x \n",arg);
+-  	do
+-  	{
+-		kprintf(" 1 [%d] pointer =0x%x \n",i,arg[i]);
+-		//kprintf("string :%s \n",arg[i]);
+-  		copyin(arg + i*sizeof(vaddr_t) , ARG[i],sizeof(vaddr_t));
+-  		kprintf(" 2 [%d] pointer =0x%x \n",i,ARG[i]);
+-  		i++;
+-  	}while(ARG[i-1]!=NULL);
+ 
+-  	
+-8*/
+-
+-
+   	//kprintf("	ARGUMENTS PASSED TO EXECV:\n");
+   	for(i=0;i<16;i++){
+ 		if (arg[i]==NULL)
+@@ -531,15 +519,10 @@
+   	}
+ 
+   	
+- 
+ 
+ 
+-
+-
+-
+ 	/**** END OF COPYING DATA FROM USER LEVEL****/
+ 
+-	//kprintf("1) MEMORY DONE   		[%d] \n",curthread->tid);
+ 
+ 	/* saving the old address_space*/
+ 	old_addr=curthread->t_vmspace;
+@@ -547,30 +530,31 @@
+ 	/* Open the file. */
+ 	result = vfs_open(PROGNAME, O_RDONLY, &v);
+ 	if (result) {
+-		kprintf("	0 ENOME ERRPR\n");
++		//kprintf("	0 ENOME ERRPR\n");
+ 		goto fail;
+ 	}
+ 	/* Create a new address space. */
+ 	curthread->t_vmspace = as_create();
+ 	if (curthread->t_vmspace==NULL) {
+ 		vfs_close(v);
+-		kprintf("	<1 ENOME ERRPR>\n");
++		//kprintf("	<1 ENOME ERRPR>\n");
+ 		result= ENOMEM;
+ 		goto fail;
+ 	}
+ 	/* Activate it. */
+ 	as_activate(curthread->t_vmspace);
+-	//kprintf("	t_vmspace <0x%x>\n",curthread->t_vmspace);
+ 
+ 	/* Load the executable. */
+ 	result = load_elf(v, &entrypoint);
+ 	if (result) {
+ 		/* thread_exit destroys curthread->t_vmspace */
+-		kprintf("	<2 ENOME ERRPR>\n");
+ 		vfs_close(v);
+ 		goto fail;
+ 	}
+ 
++	curthread->t_vmspace->v = v;
++	VOP_INCREF(curthread->t_vmspace->v);
++
+ 	/* Done with the file now. */
+ 	vfs_close(v);
+ 
+@@ -578,92 +562,36 @@
+ 	result = as_define_stack(curthread->t_vmspace, &stackptr);
+ 	if (result) {
+ 		/* thread_exit destroys curthread->t_vmspace */
+-		kprintf("	<3 ENOME ERRPR>\n");
+ 		goto fail;
+ 	}
+ 
+-	/* Destroy the old address space */
+ 	
+-	/*if (old_addr!=NULL && old_addr!=0xdeadbeef)
+-	{
+-		//kprintf("	old_addr free 0x%x\n",old_addr);
+-		as_destroy(old_addr);
+-	}
+-	else 
+-	{
+-		result -1;
+-		goto fail;
+-	}*/
+ 
+-	//kprintf("2) ADDRESS_SPACE 		[%d] \n",curthread->tid);
+ 
++	/**** COPYING OUT THE MEMORY INTO USER SPACE ***/
+ 
++	/********* Preparing argument's Methadata ****/
+ 
++	curthread->args=ARG; // passing the pointer to thread object;
++	curthread->argc=argc;
+ 
+-
+-
+-	/**** COPYING OUT THE MEMORY INTO USER SPACE ***/
+-	
+ 	/********  preparing the stack *****/
+ 	sum=0;
+ 	for (i=0;i<argc;i++) // total number of characters
+ 		sum+=lengths[i]+1;
+   	stackptr-=(argc+1)* sizeof (vaddr_t)+sum;
+-  	int j=0;
+-	sum=0;
++  	
+ 
+-  	for(j=0;j<argc && ARG!=NULL ;j++)
+-  	{
+-	  		result=copyoutstr(ARG[j], stackptr+sum, lengths[j]+1, &actual);
+ 
+-	  		if(result){
+-	  			//kprintf(" copyoutstr fucked up -_- 0x%x\n",ARG[j]);
+-				goto fail;
+-			}
+-
+-	  		pointers[j]=stackptr+sum;
+-
+-	  		if(ARG[j]!=NULL && ARG[j]!=0xdeadbeef)
+-	  		{
+-				kfree(ARG[j]);
+-				ARG[j]=NULL;
+-	  		}
+-	  		else
+-	  		{
+-	 			result=-1;
+-	 			goto fail;
+-	  		}
+-
+-			sum+=lengths[j]+1;
+-  	}
+-
+-	pointers[j]=NULL;
+-
+-  	result=copyout(pointers, stackptr+sum, (argc+1)*sizeof (vaddr_t));
+-
+-  	if(result){
+-		goto fail;
+-	}
+-
+-	/**** END COPYING OUT THE MEMORY INTO USER SPACE ****/
+-
+-
+-
+-
+-
+-
+-
+-
+-
+     /**************** FREEING MEMORY ************************/
+-	if (ARG!=NULL && ARG!=0xdeadbeef)
++	/*if (ARG!=NULL && ARG!=0xdeadbeef)
+ 		kfree(ARG);
+ 	else 
+ 	{
+ 		result =-1;
+ 		goto fail;
+ 	}
+-		
++	*/
+ 	if (PROGNAME!=NULL && PROGNAME!=0xdeadbeef)
+ 		kfree(PROGNAME);
+ 	else 
+@@ -671,7 +599,6 @@
+ 		result =-1;
+ 		goto fail;	
+ 	}
+-
+ 	/*************** FREEING MEMORY ************************/
+ 
+ 
+@@ -679,7 +606,6 @@
+ 
+ 	if (old_addr!=NULL && old_addr!=0xdeadbeef)
+ 	{
+-		//kprintf("	old_addr free 0x%x\n",old_addr);
+ 		as_destroy(old_addr);
+ 	}
+ 	else 
+@@ -692,8 +618,6 @@
+ 
+ 	lock_release(tlb_lock);
+ 
+-	//kprintf("3) EXECV NORMAL DONE 		[%d]\n ---------------------\n",curthread->tid);
+-	//splx(s);
+ 
+ 
+ 	/* Warp to user mode. */
+@@ -710,7 +634,6 @@
+ 
+ fail:
+ 	
+-	//kprintf("3) EXECV ERROR DONE err# %d\n Erasing Deleting memory ...\n",result);
+ 	for (i=0; i <16 && ARG!=NULL && ARG!=0xdeadbeef; i++){
+ 		
+ 		if (ARG[i]!=NULL && ARG[i]!=0xdeadbeef)
+@@ -730,10 +653,9 @@
+ 	as_activate(curthread->t_vmspace);
+ 	}
+ 
+-	kprintf("3) EXECV ERROR DONE err# %d\n Erasing Deleting memory ...\n",result);
++	
+ 	lock_release(tlb_lock);
+ 	
+-	//splx(s);
+ 	return result;
+ 
+ }
+@@ -744,8 +666,113 @@
+ 	return 0;
+ }
+ 
++int sys_sbrk(intptr_t amount, int * retval){
+ 
++	struct addrspace *as;
++	int pagen=0;
++	u_int32_t entrylo = 0;
++	vaddr_t newframe;
++	u_int32_t flags = 0;
++	vaddr_t faultaddress = 0;
++	u_int32_t * second_pt;
++	//kprintf(" START heaptop :%x amount %x  PAGE allign ?%x\n",( curthread->t_vmspace->as_heapvtop),amount,((amount + curthread->t_vmspace->as_heapvtop) & ~PAGE_FRAME) );
++	
++	as = curthread->t_vmspace;
++	
++	// Calculate the fault address and pass it to pt_lookup.
++	// Make faulttype = 1
+ 
++	int lookup = pt_lookup (as->page_table, faultaddress, 1, &entrylo);
++
++	if (lookup == INVALID)
++	{
++		// This means second level pt already exists so just allocate one page and update second pt
++
++		// Allocate one page
++		newframe = (vaddr_t)kmalloc(PAGE_SIZE);
++		if (! newframe){
++			return ENOMEM;
++		}
++		bzero((void *)newframe, PAGE_SIZE);
++
++		// Update Second page table
++		flags = (flags | PF_W);
++		update_second_pt_entry(as->page_table, faultaddress, newframe, flags, &entrylo);
++		
++	}
++
++	else if (lookup == NO_SECOND_LEVEL_PT)
++	{
++		// This means no second level pt exist. 
++		// 1) Allocate one page for second level pt
++		// 2) Update first level pt 
++		// 3) Allocate one page and zero it out
++		// 4) Update sedond level pt
++
++		/// 1)1) Allocate one page for second level pt
++		second_pt =(u_int32_t *) kmalloc(PAGE_SIZE);
++		if (second_pt == NULL){
++			return ENOMEM;
++		}
++		bzero((void *) second_pt, PAGE_SIZE);
++	
++		// 2) Update first level pt 
++		update_first_pt_entry(as->page_table, faultaddress, (vaddr_t) second_pt);
++
++
++		// 3) Allocate one page and zero it out
++		newframe = (vaddr_t)kmalloc(PAGE_SIZE);
++		if (! newframe){
++			return ENOMEM;
++		}
++		bzero((void *)newframe, PAGE_SIZE);
++
++		// Update Second page table
++		flags = (flags | PF_W);
++		update_second_pt_entry(as->page_table, faultaddress, newframe, 1, &entrylo);
++	}
++
++
++		//kprintf("not page alligned !\n ");
++		if ((amount + curthread->t_vmspace-> breakaddr )<= ((curthread->t_vmspace->breakaddr & PAGE_FRAME) +PAGE_SIZE))
++		{
++			pagen=0;
++			*retval= curthread->t_vmspace->breakaddr;
++			if (curthread->t_vmspace->breakaddr+amount <= curthread->t_vmspace->as_stackvbase)
++				curthread->t_vmspace->breakaddr+=amount;
++			else
++			{
++				kprintf("stack goosfand\n");
++				return ENOMEM;
++			}
++			//kprintf("return value!%x \n ",*retval);
++			//kprintf(" END heaptop :%x amount %x  \n",( curthread->t_vmspace->as_heapvtop),amount);
++		}
++		else {
++			pagen=((amount + curthread->t_vmspace->breakaddr) - ((curthread->t_vmspace->breakaddr & PAGE_FRAME) +PAGE_SIZE))/PAGE_SIZE+1;
++			*retval= curthread->t_vmspace->breakaddr;
++
++			if (curthread->t_vmspace->breakaddr+amount <= curthread->t_vmspace->as_stackvbase)
++			{
++				curthread->t_vmspace->breakaddr+=amount;
++				curthread->t_vmspace->as_heapvtop=(pagen+1)*PAGE_SIZE + curthread->t_vmspace->as_heapvtop;
++			}
++			else
++			{
++				kprintf("stack goosfand\n");
++				return ENOMEM;
++			}
++			//kprintf("return value!%x \n ",*retval);
++
++			//kprintf(" END heaptop :%x amount %x  \n",( curthread->t_vmspace->as_heapvtop),amount);
++		}
++
++
++	return 0;
++
++}
++
++
+ /*
+  * Kernel main. Boot up, then fork the menu thread; wait for a reboot
+  * request, and then shut down.
+Index: kern/main/menu.c
+===================================================================
+--- kern/main/menu.c	(.../tags/asst3-start)	(revision 95)
++++ kern/main/menu.c	(.../trunk)	(revision 95)
+@@ -446,7 +446,21 @@
+ 	return 0;
+ }
+ 
++static
++int
++cmd_coremapstats(int nargs, char **args)
++{
++	(void)nargs;
++	(void)args;
+ 
++	coremap_printstats();
++	
++	return 0;
++}
++
++
++
++
+ static const char *opsmenu[] = {
+ 	"[s]       Shell                     ",
+ 	"[p]       Other program             ",
+@@ -526,6 +540,7 @@
+ 	"[1c] Stoplight                      ",
+ #endif
+ 	"[kh] Kernel heap stats              ",
++	"[cm] Core map satats			     ",
+ 	"[q] Quit and shut down              ",
+ 	NULL
+ };
+@@ -582,6 +597,7 @@
+ 
+ 	/* stats */
+ 	{ "kh",         cmd_kheapstats },
++	{ "cm", 	cmd_coremapstats   },
+ 
+ 	/* base system tests */
+ 	{ "at",		arraytest },
+Index: kern/conf/conf.kern
+===================================================================
+--- kern/conf/conf.kern	(.../tags/asst3-start)	(revision 95)
++++ kern/conf/conf.kern	(.../trunk)	(revision 95)
+@@ -390,6 +390,7 @@
+ #
+ 
+ optofffile dumbvm   vm/addrspace.c
++file      vm/page_table.c
+ 
+ #
+ # Network
+Index: kern/lib/kprintf.c
+===================================================================
+--- kern/lib/kprintf.c	(.../tags/asst3-start)	(revision 95)
++++ kern/lib/kprintf.c	(.../trunk)	(revision 95)
+@@ -7,6 +7,7 @@
+ #include <thread.h>       // for thread_panic();
+ #include <machine/pcb.h>  // for md_panic()
+ #include <machine/spl.h>
++#include <curthread.h>
+ 
+ /* Flags word for DEBUG() macro. */
+ u_int32_t dbflags = 0;
+@@ -76,6 +77,7 @@
+ void
+ panic(const char *fmt, ...)
+ {
++	kprintf("curthread : %x, id: %d about to panic\n", curthread,curthread->tid);
+ 	va_list ap;
+ 
+ 	/*
+Index: kern/userprog/runprogram.c
+===================================================================
+--- kern/userprog/runprogram.c	(.../tags/asst3-start)	(revision 95)
++++ kern/userprog/runprogram.c	(.../trunk)	(revision 95)
+@@ -15,6 +15,7 @@
+ #include <vm.h>
+ #include <vfs.h>
+ #include <test.h>
++ #include <vnode.h>
+ 
+ /*
+  * Load program "progname" and start running it in usermode.
+@@ -28,7 +29,10 @@
+ 	struct vnode *v;
+ 	vaddr_t entrypoint, stackptr;
+ 	int result;
++	char **ARGS;
+ 
++
++	kprintf("the program name is %s\n",progname);
+ 	/* Open the file. */
+ 	result = vfs_open(progname, O_RDONLY, &v);
+ 	if (result) {
+@@ -56,6 +60,9 @@
+ 		return result;
+ 	}
+ 
++	curthread->t_vmspace->v = v;
++	VOP_INCREF(curthread->t_vmspace->v);
++
+ 	/* Done with the file now. */
+ 	vfs_close(v);
+ 
+@@ -65,42 +72,44 @@
+ 		/* thread_exit destroys curthread->t_vmspace */
+ 		return result;
+ 	}
++	/* Define the heapbase and top*/
++	// Page alligned heapbase
++	result = as_define_heap(curthread->t_vmspace, &curthread->t_vmspace->as_heapbase);
+ 
++	if (result) {
++		
++		return result;
++	}
++	curthread->t_vmspace->as_heapvtop=curthread->t_vmspace->as_heapbase + PAGE_SIZE;
++
+ 	/* Warp to user mode. */
+ 	int i=0;
+ 	int sum=0;
+ 	int actual=0;
+ 	int pointers[16];
+ 
+-    	//preparing the stack
++	/// Preparing the argument's methadata
++	ARGS = (char**) kmalloc(sizeof(char*)*16);
++	for (i=0;i<argc;i++) 
++	{
++		ARGS[i]=(char*) kmalloc( sizeof(char)*(strlen(argv[i])+1));
++
++		strcpy(ARGS[i],argv[i]);
++		
++	}
++
++	//kprintf("we are here\n");
++	curthread->args=ARGS;
++	curthread->argc=argc;
++	
++	//preparing the stack
++
+ 	for (i=0;i<argc;i++) // total number of characters
+ 		sum+=strlen(argv[i])+1;
+   	stackptr-=(argc+1)* sizeof (vaddr_t)+sum;
+-  	//kprintf("1 argc %d\n",argc);
+-  	sum=0;
+-  	for(i=0; i<argc ;i++)
+-  	{
+-  			//kprintf("1 [%d] arg %s\n",i,argv[i]);
+-	  		result=copyoutstr(argv[i], stackptr+sum, strlen(argv[i])+1, &actual);
++  	
+ 
+-	  		if(result){
+-	  			//kprintf(" copyoutstr fucked up -_- 0x%x\n",argv[i]);
+-				return ENOMEM;
+-			}
+-
+-	  		pointers[i]=stackptr+sum;
+-
+-			sum+=strlen(argv[i])+1;
+-  	}
+-
+-	pointers[i]=NULL;
+-
+-  	result=copyout(pointers, stackptr+sum, (argc+1)*sizeof (vaddr_t));
+-
+-  	if(result){
+-		return ENOMEM;
+-	}
+-
++	
+ 	md_usermode(argc/*argc*/, stackptr+sum /*userspace addr of argv*/,
+ 		    stackptr, entrypoint);
+ 	
+Index: kern/userprog/loadelf.c
+===================================================================
+--- kern/userprog/loadelf.c	(.../tags/asst3-start)	(revision 95)
++++ kern/userprog/loadelf.c	(.../trunk)	(revision 95)
+@@ -93,7 +93,11 @@
+ 	Elf_Phdr ph;   /* "Program header" = segment header */
+ 	int result, i;
+ 	struct uio ku;
++	struct addrspace * as;
+ 
++	as = curthread->t_vmspace;
++
++
+ 	/*
+ 	 * Read the executable header from offset 0 in the file.
+ 	 */
+@@ -175,26 +179,60 @@
+ 			return ENOEXEC;
+ 		}
+ 
+-		result = as_define_region(curthread->t_vmspace,
+-					  ph.p_vaddr, ph.p_memsz,
+-					  ph.p_flags & PF_R,
+-					  ph.p_flags & PF_W,
+-					  ph.p_flags & PF_X);
++		(as->as_segnum)++;
++	}
++
++
++	as->as_region = (struct region *)kmalloc ((as->as_segnum) *sizeof(struct region));
++
++	///set up regions info
++	int j = 0;
++	for (i=0; i<eh.e_phnum; i++) {
++		off_t offset = eh.e_phoff + i*eh.e_phentsize;
++		mk_kuio(&ku, &ph, sizeof(ph), offset, UIO_READ);
++
++		result = VOP_READ(v, &ku);
+ 		if (result) {
+ 			return result;
+ 		}
+-	}
+ 
+-	result = as_prepare_load(curthread->t_vmspace);
+-	if (result) {
+-		return result;
++		if (ku.uio_resid != 0) {
++			/* short read; problem with executable? */
++			kprintf("ELF: short read on phdr - file truncated?\n");
++			return ENOEXEC;
++		}
++
++		switch (ph.p_type) {
++		    case PT_NULL: /* skip */ continue;
++		    case PT_PHDR: /* skip */ continue;
++		    case PT_MIPS_REGINFO: /* skip */ continue;
++		    case PT_LOAD: break;
++		    default:
++			kprintf("loadelf: unknown segment type %d\n", 
++				ph.p_type);
++			return ENOEXEC;
++		}
++
++		as->as_region[j].p_vaddr = ph.p_vaddr;
++		as->as_region[j].p_offset = ph.p_offset;
++		as->as_region[j].p_filesz = ph.p_filesz;
++		as->as_region[j].p_memsz = ph.p_memsz;
++		as->as_region[j].p_flags = ph.p_flags;
++		
++		j++;
++		
+ 	}
+ 
++	as->as_stackvbase = USERSTACK;
++	as->as_heapvtop = as->as_region[as->as_segnum-1].p_vaddr +  as->as_region[as->as_segnum-1].p_memsz;
++
++
++
+ 	/*
+ 	 * Now actually load each segment.
+ 	 */
+ 
+-	for (i=0; i<eh.e_phnum; i++) {
++	/*for (i=0; i<eh.e_phnum; i++) {
+ 		off_t offset = eh.e_phoff + i*eh.e_phentsize;
+ 		mk_kuio(&ku, &ph, sizeof(ph), offset, UIO_READ);
+ 
+@@ -204,15 +242,15 @@
+ 		}
+ 
+ 		if (ku.uio_resid != 0) {
+-			/* short read; problem with executable? */
++			/// short read; problem with executable? 
+ 			kprintf("ELF: short read on phdr - file truncated?\n");
+ 			return ENOEXEC;
+ 		}
+ 
+ 		switch (ph.p_type) {
+-		    case PT_NULL: /* skip */ continue;
+-		    case PT_PHDR: /* skip */ continue;
+-		    case PT_MIPS_REGINFO: /* skip */ continue;
++		    case PT_NULL:  continue;
++		    case PT_PHDR:  continue;
++		    case PT_MIPS_REGINFO:  continue;
+ 		    case PT_LOAD: break;
+ 		    default:
+ 			kprintf("loadelf: unknown segment type %d\n", 
+@@ -226,7 +264,7 @@
+ 		if (result) {
+ 			return result;
+ 		}
+-	}
++	}	*/
+ 
+ 	result = as_complete_load(curthread->t_vmspace);
+ 	if (result) {
+Index: kern/thread/thread.c
+===================================================================
+--- kern/thread/thread.c	(.../tags/asst3-start)	(revision 95)
++++ kern/thread/thread.c	(.../trunk)	(revision 95)
+@@ -74,6 +74,8 @@
+ 	thread->child_list = array_create();
+ 
+ 	thread->parent = -2; 
++	thread->args = NULL;
++	thread->argc = 0;
+ 
+ 	
+ 	// If you add things to the thread structure, be sure to initialize
+@@ -92,6 +94,7 @@
+ void
+ thread_destroy(struct thread *thread)
+ {
++	//int spl = splhigh();
+ 	assert(thread != curthread);
+ 
+ 	// If you add things to the thread structure, be sure to dispose of
+@@ -103,12 +106,18 @@
+ 
+ 	
+ 	if (thread->t_stack) {
++		//kprintf("freeing stack !\n");
+ 		kfree(thread->t_stack);
+ 	}
+ 
+-	kfree(thread->t_name);
++	//as_destroy(thread->t_vmspace);
++	//kprintf("~~~~~~~~~~~~~~~~freeing 0x%x\n", thread->t_name);
++	if (thread->t_name)
++		kfree(thread->t_name);
++	//kprintf("freeing 0x%x\n", thread->t_name);
+ 	array_destroy(thread->child_list);
+ 	kfree(thread);
++	//splx(spl);
+ }
+ 
+ 
+@@ -284,6 +293,7 @@
+ 		kfree(child_thread);
+ 		return ENOMEM;
+ 	}
++	//kprintf("Allocating stack %x\n", child_thread->t_stack );
+ 
+ 	/* stick a magic number on the bottom end of the stack */
+ 	child_thread->t_stack[0] = 0xae;
+@@ -300,18 +310,22 @@
+     /* Allocate name for child thread */
+ 	child_thread->t_name = (char *)kmalloc(20*sizeof(char));
+ 	if (child_thread->t_name == NULL)
+-		return ENOMEM;
++	{
++		result = ENOMEM;
++		goto fail;
++	}
++	//kprintf("allocating thread name 0x%x\n", child_thread->t_name);
+ 
+ 	snprintf(child_thread->t_name, 20, "%lx",child_thread);
+ 
+ 
+ 	if (func == md_forkentry)
+ 	{
+-		int errr = as_copy(curthread->t_vmspace, &(child_thread->t_vmspace));
++		result = as_copy(curthread->t_vmspace, &(child_thread->t_vmspace));
+ 		//lock_release(tlb_lock);
+-		if(errr)
++		if(result)
+ 		{
+-			return errr;
++			goto fail;
+ 		} 
+ 	}
+ 
+@@ -322,28 +336,36 @@
+ 	int tid = ht_add_element(process_table, child_thread->t_name, child_thread);
+ 	if (tid == -2){
+ 		/* Means too many process exists */
+-		return EAGAIN;
++		result = EAGAIN;
++		goto fail;
+ 	}
+ 	if (tid == -1){
+ 		/* Means no memory available */
+-		return ENOMEM;
++		result = ENOMEM;
++		goto fail;
+ 	}
+ 
+ 	child_thread->tid = tid;
+ 	child_thread->parent = curthread->tid;
+ 
++	//kprintf("want to allocate child item\n");
+ 	struct child_info* item = (struct child_info *) kmalloc (sizeof (struct child_info));
+ 	if (item == NULL){
+-		return ENOMEM;
++		result = ENOMEM;
++		goto fail;
+ 	}
+ 
++	//kprintf("allocate child item %x\n", item);
++
+ 	item->child_tid = tid;
+ 	item->status = FREE;
+ 
+ 	//Adding to cutthread child_list
+-	 int err = array_add(curthread->child_list, item);  // handelllee eeerrorr 
+-	 if (err)
+-	 	return err;
++	 result = array_add(curthread->child_list, item);  // handelllee eeerrorr 
++	 if (result){
++	 	goto fail;
++	 }
++	 	
+ 
+    ///
+ 
+@@ -549,6 +571,12 @@
+ 		curthread->t_cwd = NULL;
+ 	}
+ 
++	//kprintf("^^^^^^\n");
++	//if (curthread->t_vmspace->v)
++		//vfs_close(curthread->t_vmspace->v);
++	//kprintf("!!!^^^^^^\n");
++
++
+ 	assert(numthreads>0);
+ 	numthreads--;
+ 	mi_switch(S_ZOMB);
+Index: kern/thread/synch.c
+===================================================================
+--- kern/thread/synch.c	(.../tags/asst3-start)	(revision 95)
++++ kern/thread/synch.c	(.../trunk)	(revision 95)
+@@ -112,6 +112,7 @@
+ 	}
+ 
+ 	lock->name = kstrdup(name);
++	//kprintf ("@@@@@@@@@****the address of name given is 0x%x  ***\n", lock->name);
+ 	if (lock->name == NULL) {
+ 		kfree(lock);
+ 		return NULL;
+@@ -133,7 +134,7 @@
+ 	assert(thread_hassleepers(lock)==0);
+ 	splx(spl);
+ 
+-	
++	//kprintf ("****the address of name is 0x%x  ***\n", lock->name);
+ 	kfree(lock->name);
+ 	kfree(lock);
+ }
+Index: kern/arch/mips/include/vm.h
+===================================================================
+--- kern/arch/mips/include/vm.h	(.../tags/asst3-start)	(revision 95)
++++ kern/arch/mips/include/vm.h	(.../trunk)	(revision 95)
+@@ -34,6 +34,7 @@
+  * a valid address, and will make a *huge* mess if you scribble on it.
+  */
+ #define PADDR_TO_KVADDR(paddr) ((paddr)+MIPS_KSEG0)
++#define KVADDR_TO_PADDR(vaddr) ((vaddr)-MIPS_KSEG0)
+ 
+ /*
+  * The top of user space. (Actually, the address immediately above the
+Index: kern/arch/mips/include/coremap.h
+===================================================================
+--- kern/arch/mips/include/coremap.h	(.../tags/asst3-start)	(revision 0)
++++ kern/arch/mips/include/coremap.h	(.../trunk)	(revision 95)
+@@ -0,0 +1,84 @@
++#ifndef _MACHINE_COREMAP_H_
++#define _MACHINE_COREMAP_H_
++
++#include <types.h>
++#include <machine/vm.h>
++#include <vm.h>
++
++struct page_info {
++	int page_nr;
++	int pid;
++};
++
++struct frame_info {
++	u_int8_t status; 
++	u_int8_t shared;
++	u_int8_t protection;
++	u_int8_t alloc_size;
++	struct page_info * page_list;
++};
++
++
++enum status 
++{
++	UNALLOCATED,
++	KERNEL_ALLOCATED,
++	USER_ALLOCATED
++};
++
++enum protection
++{
++	READ_ONLY,
++	WRITABLE,
++	TEMP_READ_ONLY
++};
++
++
++
++
++/* Function for setting up the coremap */
++
++void coremap_initialization ();
++
++
++
++void coremap_printstats();
++
++
++/* Coremap API */
++/*
++* Aloocate n frame of memory, retrun physical address of first frame
++*/
++paddr_t allocate_frame(int n);
++
++/*
++* Free block of frames, starting at frame
++*/
++int free_frame(vaddr_t addr);
++
++/*
++* Map physical address (frame) to virtual address (page_nr, pid)
++* NOTE: a frame may be mapped to multiple pages in the same or 
++* Different address spaces.
++*/
++int map (int pid, int page_nr, int frame);
++
++
++/*
++* Removes mapping of frame corresponding to pgae_nr from address space
++*/
++int unmap (int pid, int page_nr);
++
++
++/*
++*
++*/
++void increfcount(paddr_t frameaddr);
++
++void decrefcount(paddr_t frameaddr);
++
++int isShared (paddr_t frameaddr);
++
++
++
++#endif /* _MACHINE_COREMAP_H_ */
+\ No newline at end of file
+Index: kern/arch/mips/include/ktypes.h
+===================================================================
+--- kern/arch/mips/include/ktypes.h	(.../tags/asst3-start)	(revision 95)
++++ kern/arch/mips/include/ktypes.h	(.../trunk)	(revision 95)
+@@ -5,7 +5,8 @@
+  * Some other machine-dependent types. These should not be visible to
+  * userland and thus can't go in <machine/types.h>.
+  */
+-
++ #include <machine/types.h>
++ 
+ typedef u_int32_t paddr_t;   /* type for a physical address */
+ typedef u_int32_t vaddr_t;   /* type for a virtual address */
+ 
+Index: kern/arch/mips/conf/conf.arch
+===================================================================
+--- kern/arch/mips/conf/conf.arch	(.../tags/asst3-start)	(revision 95)
++++ kern/arch/mips/conf/conf.arch	(.../trunk)	(revision 95)
+@@ -17,6 +17,8 @@
+ file        arch/mips/mips/trap.c		# Trap (exception) handler
+ file        arch/mips/mips/tlb_mips1.S		# TLB handling routines
+ 
++file        arch/mips/mips/vm.c		
++file        arch/mips/mips/coremap.c		
+ file        ../lib/libc/mips-setjmp.S		# setjmp/longjmp
+ 
+ #
+Index: kern/arch/mips/mips/syscall.c
+===================================================================
+--- kern/arch/mips/mips/syscall.c	(.../tags/asst3-start)	(revision 95)
++++ kern/arch/mips/mips/syscall.c	(.../trunk)	(revision 95)
+@@ -99,6 +99,10 @@
+ 	    case SYS_execv:
+ 	    err= sys_execv(tf->tf_a0,tf->tf_a1);
+ 	    break;
++
++	    case SYS_sbrk:
++	    err= sys_sbrk(tf->tf_a0,&retval);
++	    break;
+ 	    /* Add stuff here */
+  
+ 	    default:
+Index: kern/arch/mips/mips/ram.c
+===================================================================
+--- kern/arch/mips/mips/ram.c	(.../tags/asst3-start)	(revision 95)
++++ kern/arch/mips/mips/ram.c	(.../trunk)	(revision 95)
+@@ -86,5 +86,5 @@
+ {
+ 	*lo = firstpaddr;
+ 	*hi = lastpaddr;
+-	firstpaddr = lastpaddr = 0;
++	//firstpaddr = lastpaddr = 0;
+ }
+Index: kern/arch/mips/mips/vm.c
+===================================================================
+--- kern/arch/mips/mips/vm.c	(.../tags/asst3-start)	(revision 0)
++++ kern/arch/mips/mips/vm.c	(.../trunk)	(revision 95)
+@@ -0,0 +1,691 @@
++#include <types.h>
++#include <kern/errno.h>
++#include <lib.h>
++#include <thread.h>
++#include <curthread.h>
++#include <addrspace.h>
++#include <vm.h>
++#include <machine/spl.h>
++#include <machine/tlb.h>
++#include <machine/coremap.h>
++#include <page_table.h>
++#include <uio.h>
++#include <vnode.h>
++
++
++/*
++ * Dumb MIPS-only "VM system" that is intended to only be just barely
++ * enough to struggle off the ground. You should replace all of this
++ * code while doing the VM assignment. In fact, starting in that
++ * assignment, this file is not included in your kernel!
++ */
++
++/* under dumbvm, always have 48k of user stack */
++#define DUMBVM_STACKPAGES    12
++
++ enum mapping {
++ 	CODE,
++ 	DATA,
++ 	HEAP,
++ 	STACK,
++ 	UNMAPPED
++ };
++
++ extern int VM_INITIALIZED;
++
++void
++vm_bootstrap(void)
++{
++	/* Do nothing. */
++	/*u_int32_t lo; 
++	u_int32_t hi;
++	ram_getsize(&lo, &hi);*/
++	coremap_initialization ();
++	return;
++}
++
++static
++paddr_t
++getppages(unsigned long npages)
++{
++	int spl;
++	paddr_t addr;
++
++	spl = splhigh();
++
++	if (! VM_INITIALIZED)
++		addr = ram_stealmem(npages);
++	else
++		addr = allocate_frame(npages);
++	//addr = ram_stealmem(npages);
++	
++	splx(spl);
++	return addr;
++}
++
++/* Allocate/free some kernel-space virtual pages */
++vaddr_t 
++alloc_kpages(int npages)
++{
++	paddr_t pa;
++	pa = getppages(npages);
++	if (pa==0) {
++		return 0;
++	}
++	return PADDR_TO_KVADDR(pa);
++}
++
++void 
++free_kpages(vaddr_t addr)
++{
++	/* nothing */
++
++	if (VM_INITIALIZED)
++		free_frame(addr);
++	
++}
++
++int
++vm_fault(int faulttype, vaddr_t faultaddress)
++{
++	vaddr_t vbase1, vtop1, vbase2, vtop2, heapbase, heaptop, stackbase, stacktop, temp;
++	paddr_t paddr;
++	int i, result;
++	int mapped_region;
++	u_int32_t ehi, elo;
++	struct addrspace *as;
++	u_int32_t entrylo = 0;
++	vaddr_t newframe = 0;
++	u_int32_t * second_pt;
++	u_int32_t flags = 0;
++
++	int spl;
++
++	spl = splhigh();
++	
++	//faultaddress &= PAGE_FRAME;
++
++	/*DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
++
++	switch (faulttype) {
++	    case VM_FAULT_READONLY:
++		//We always create pages read-write, so we can't get this 
++		panic("dumbvm: got VM_FAULT_READONLY\n");
++	    case VM_FAULT_READ:
++
++	   	case VM_FAULT_WRITE:
++
++		break;
++	    default:
++		splx(spl);
++		return EINVAL;
++	}*/
++
++	as = curthread->t_vmspace;
++	if (as == NULL) {
++		/*
++		 * No address space set up. This is probably a kernel
++		 * fault early in boot. Return EFAULT so as to panic
++		 * instead of getting into an infinite faulting loop.
++		 */
++		return EFAULT;
++	}
++
++	/* Assert that the address space has been set up properly. */
++	for (i = 0 ; i < as->as_segnum; i++){
++		assert(as->as_region[i].p_vaddr != 0);
++		assert((as->as_region[i].p_vaddr & PAGE_FRAME) == as->as_region[i].p_vaddr);
++	}
++
++	assert(as->as_stackvbase != 0);
++	assert(as->as_heapvtop != 0);
++
++
++
++	// Check if faultaddress is in the mapped region 
++	// I need to get rid of the stack afterward since stack size is no longer fixed
++
++	vbase1 = as->as_region[0].p_vaddr;
++	vtop1 = vbase1 + as->as_region[0].p_memsz;
++	vbase2 = as->as_region[1].p_vaddr;
++	vtop2 = vbase2 + as->as_region[1].p_memsz;
++	//heapbase = vbase2 + as->as_region[1].p_memsz;
++	heapbase= as->as_heapbase;
++	heaptop = as->as_heapvtop;
++	stackbase = as->as_stackvbase - PAGE_SIZE;
++	stacktop = USERSTACK;
++
++
++	if (faultaddress >= vbase1 && faultaddress < vtop1) {
++		mapped_region = CODE;
++	}
++	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
++		mapped_region = DATA;
++	}
++	else if (faultaddress >= heapbase && faultaddress < heaptop) {
++		mapped_region = HEAP;
++	}
++	else if (faultaddress >= stackbase && faultaddress < stacktop){
++		mapped_region = STACK;
++	}
++	else {
++		splx(spl);
++		return EFAULT;
++	}
++
++	if (as->page_table == NULL)
++	{
++		as->page_table = pt_create();
++		// if no memory available
++		if (as->page_table == NULL)
++			return ENOMEM;
++	}
++
++
++
++	int lookup = pt_lookup (as->page_table, faultaddress, faulttype, &entrylo);
++
++	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
++
++	switch (faulttype) {
++	    case VM_FAULT_READONLY:
++			//We always create pages read-write, so we can't get this 
++			//panic("dumbvm: got VM_FAULT_READONLY\n");
++			if (lookup==WRITE_PERMITTED)
++			{
++				// creating a page
++
++				//temp=(vaddr_t)kmalloc(PAGE_SIZE);
++				//memcpy(temp,faultaddress & PAGE_FRAME,PAGE_SIZE);
++				//update_second_pt_entry(as->page_table, faultaddress, temp, PF_W, &entrylo);
++				result = pt_copy_on_write (as->page_table, faultaddress, &entrylo);
++				if (result){
++					return result;
++				}
++
++				int index = TLB_Probe(faultaddress & PAGE_FRAME, 0);
++				TLB_Write(faultaddress & PAGE_FRAME, entrylo, index);
++				splx(spl);
++				return 0;
++			}
++			else
++			{
++				panic("dumbvm: got VM_FAULT_READONLY\n");
++				// we should kill user thread
++				splx(spl);
++				return 0;
++			}
++
++	    case VM_FAULT_READ:
++
++	    case VM_FAULT_WRITE:
++
++		break;
++	    default:
++		splx(spl);
++		return EINVAL;
++	}
++	/***************************************************/
++
++	
++
++
++	if (lookup == PTE_FOUND){
++	
++		// frame number found update TLB and return
++	}
++
++	else if (lookup == NO_SECOND_LEVEL_PT || lookup == INVALID){
++
++		/// 1) Allocate a second level PT
++		/// 2) Update first_pt_entry correponding to faultaddress
++		/// 3) Allocate a frame for user
++		/// 4) Read from disk to user frame if mapped region is CODE or DATA
++		/// 5) update the second level pt corresponding to faultaddr
++		/// 6) Update TLB for fault addr
++
++		
++		if (lookup == NO_SECOND_LEVEL_PT){
++			/// 1)
++			second_pt =(u_int32_t *) kmalloc(PAGE_SIZE);
++			if (second_pt == NULL){
++				return ENOMEM;
++			}
++			bzero((void *) second_pt, PAGE_SIZE);
++
++			/// 2)
++			update_first_pt_entry(as->page_table, faultaddress, (vaddr_t) second_pt);
++		}
++				
++		if (mapped_region == CODE || mapped_region == DATA ){
++					
++			result = as_load_page (faultaddress, mapped_region, &newframe);
++			if (result){
++				return result;
++			}
++			flags = as->as_region[mapped_region].p_flags;
++		}
++
++		if (mapped_region == HEAP){
++
++
++			newframe = (vaddr_t)kmalloc(PAGE_SIZE);
++			if (! newframe){
++				return ENOMEM;
++			}
++			bzero((void *)newframe, PAGE_SIZE);
++			flags = (flags | PF_W);
++			}
++		
++		if (mapped_region == STACK){
++
++
++			newframe = (vaddr_t)kmalloc(PAGE_SIZE);
++			if (! newframe){
++				return ENOMEM;
++			}
++			bzero((void *)newframe, PAGE_SIZE);
++			as->as_stackvbase = (faultaddress & PAGE_FRAME);
++			flags = (flags | PF_W);
++			/***** Handeling  Arguments *****/
++			if (curthread->args != NULL)
++			{
++				
++				//kprintf("my tid in stack is %d")
++				int j=0;
++				int sum=0;
++				vaddr_t pointers[16];
++
++				temp= newframe +PAGE_SIZE; // stacktop
++		
++				for (i=0;i<curthread->argc;i++) // total number of characters
++				{
++					sum+=strlen(curthread->args[i])+1;
++				}
++  				temp-=(curthread->argc+1)* sizeof (vaddr_t)+sum;
++  				
++				sum=0;
++
++  				for(j=0;j<curthread->argc && curthread->args[j]!=NULL ;j++)
++  				{
++  
++	  				memcpy( (void*) temp+sum,(void *) curthread->args[j], strlen(curthread->args[j])+1);
++	  				pointers[j]=(faultaddress& PAGE_FRAME)+(temp+sum-newframe);
++					sum+=strlen(curthread->args[j])+1;
++  				}
++
++				pointers[j]=0;
++
++  				memcpy( temp+sum, pointers, (curthread->argc+1)*sizeof (vaddr_t));
++
++				//kfree(curthread->args);
++				curthread->args=NULL;
++			}
++
++		}
++
++		update_second_pt_entry(as->page_table, faultaddress, newframe, flags, &entrylo);
++	}
++	
++
++	else{ /// SWAPPED
++		;
++	} 
++			
++			
++			
++		
++	
++	/********************UPDATING TLB******************************/
++
++	/* make sure it's page-aligned */
++	//assert((paddr & PAGE_FRAME)==paddr);
++update_TLB:
++
++	for (i=0; i<NUM_TLB; i++) {
++		TLB_Read(&ehi, &elo, i);
++		if (elo & TLBLO_VALID) {
++			continue;
++		}
++		ehi = faultaddress & PAGE_FRAME;
++		elo = entrylo;
++		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
++		TLB_Write(ehi, elo, i);
++		splx(spl);
++		return 0;
++	}
++
++	//kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
++	int rand_entery=random()%64;
++	ehi = faultaddress & PAGE_FRAME;
++	elo = entrylo;
++	DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
++	TLB_Write(ehi, elo, rand_entery);
++	splx(spl);
++	return 0;
++}
++
++
++struct addrspace *
++as_create(void)
++{
++	struct addrspace *as = kmalloc(sizeof(struct addrspace));
++	if (as==NULL) {
++		return NULL;
++	}
++	as->as_segnum = 0;
++	//as->as_vbase = NULL;
++	as->as_vbase1 = 0;
++	as->as_pbase1 = 0;
++	as->as_npages1 = 0;
++	as->as_vbase2 = 0;
++	as->as_pbase2 = 0;
++	as->as_npages2 = 0;
++	as->as_region = NULL;
++	as->as_stackvbase = 0;
++	as->as_heapvtop = 0;
++	as->as_stackpbase = 0;
++	as->page_table = NULL;	
++
++	return as;
++}
++
++///int i=0;
++void
++as_destroy(struct addrspace *as)
++{
++	//static int i = 0;
++	int spl = splhigh();
++	//kprintf("entering as_detroy\n"); 
++//	kprintf("as_destroy as, i = %d\n",i);
++//	i++;
++	if (as->as_pbase1 != 0){
++	//	kprintf ("1. 0x%x *** %d\n", as->as_pbase1,i);
++		//kfree(PADDR_TO_KVADDR(as->as_pbase1));
++	}
++
++	if (as->as_pbase2 != 0){
++	//	kprintf ("2. 0x%x  *** %d\n", as->as_pbase2, i);
++		//kfree(PADDR_TO_KVADDR(as->as_pbase2));
++	}
++
++	if (as->as_stackpbase != 0){
++	//	kprintf ("3. 0x%x *** %d\n", as->as_stackpbase, i);
++		//kfree(PADDR_TO_KVADDR(as->as_stackpbase));
++	}
++	//kprintf ("4. 0x%x\n ***\n", as);
++	//kfree(as);
++	//kprintf("exiting as_detroy\n"); 
++	//while(1);
++	if (as->page_table)
++		pt_deep_destroy(as->page_table);
++
++	if (as->v)
++		VOP_DECREF(as->v);
++
++	splx(spl);
++}
++
++void
++as_activate(struct addrspace *as)
++{
++	int i, spl;
++
++	(void)as;
++
++	spl = splhigh();
++
++	for (i=0; i<NUM_TLB; i++) {
++		TLB_Write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
++	}
++
++	splx(spl);
++}
++
++void
++as_make_readonly()
++{
++	int i, spl;
++	u_int32_t ehi, elo;
++
++	spl = splhigh();
++
++	for (i=0; i<NUM_TLB; i++)
++	{
++		TLB_Read(&ehi, &elo, i);
++		if (elo & TLBLO_VALID)
++		{
++			elo = elo & (~TLBLO_DIRTY);
++			TLB_Write(ehi, elo, i);
++		}
++	}
++
++	splx(spl);
++}
++
++int
++as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
++		 int readable, int writeable, int executable)
++{
++	/// Never gets called region set up is done completley in load_elf
++	/// Get rid of it later
++
++	size_t npages; 
++
++	/* Align the region. First, the base... */
++	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
++	vaddr &= PAGE_FRAME;
++
++	/* ...and now the length. */
++	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
++
++	npages = sz / PAGE_SIZE;
++
++	/* We don't use these - all pages are read-write */
++	(void)readable;
++	(void)writeable;
++	(void)executable;
++
++	if (as->as_vbase1 == 0) {
++		as->as_vbase1 = vaddr;
++		as->as_npages1 = npages;
++		return 0;
++	}
++
++	if (as->as_vbase2 == 0) {
++		as->as_vbase2 = vaddr;
++		as->as_npages2 = npages;
++		return 0;
++	}
++
++	/*
++	 * Support for more than two regions is not available.
++	 */
++	kprintf("dumbvm: Warning: too many regions\n");
++	return EUNIMP;
++}
++
++int
++as_prepare_load(struct addrspace *as)
++{
++	assert(as->as_pbase1 == 0);
++	assert(as->as_pbase2 == 0);
++	assert(as->as_stackpbase == 0);
++
++	as->as_pbase1 = getppages(as->as_npages1);
++	if (as->as_pbase1 == 0) {
++		return ENOMEM;
++	}
++
++	as->as_pbase2 = getppages(as->as_npages2);
++	if (as->as_pbase2 == 0) {
++		return ENOMEM;
++	}
++
++	as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
++	if (as->as_stackpbase == 0) {
++		return ENOMEM;
++	}
++
++	return 0;
++}
++
++int
++as_load_page (vaddr_t faultaddress, int mapped_region, vaddr_t *newframe)
++{
++	vaddr_t startaddr;
++	vaddr_t endaddr;
++	struct addrspace *as;
++	struct uio u;
++	u_int32_t offset;
++	size_t len;		// amount to actually read
++	size_t fillamt;
++	int result;
++	struct vnode * v;
++
++	// 1) allocate a frame for user
++	void * new_frame = kmalloc(PAGE_SIZE);
++	if (new_frame == NULL){
++		return ENOMEM;
++	}
++	bzero((void *)new_frame, PAGE_SIZE);
++
++	as = curthread->t_vmspace;
++	v = as->v;
++
++	faultaddress &= PAGE_FRAME;
++	startaddr = as->as_region[mapped_region].p_vaddr;
++	endaddr = as->as_region[mapped_region].p_vaddr + as->as_region[mapped_region].p_filesz;
++
++	offset = as->as_region[mapped_region].p_offset + (faultaddress - startaddr);
++
++	if (faultaddress + PAGE_SIZE <= endaddr){
++		len = PAGE_SIZE; 	// amount to actually read
++	}
++	else {
++		if (endaddr > faultaddress)
++			len = endaddr-faultaddress;
++		else
++			len = 0;
++	}
++
++	mk_kuio(&u, new_frame, PAGE_SIZE, offset, UIO_READ);
++	u.uio_resid = len;
++
++	//kprintf("reading file and vnode\n");
++	result = VOP_READ(v, &u);
++	if (result) {
++		return result;
++	}
++
++	if (u.uio_resid != 0) {
++			/* short read; problem with executable? */
++			kprintf("ELF: short read on phdr - file truncated?\n");
++			return ENOEXEC;
++	}
++
++	/* Fill the rest of the memory space (if any) with zeros */
++	fillamt = PAGE_SIZE - len;
++	if (fillamt > 0) {
++		DEBUG(DB_EXEC, "ELF: Zero-filling %lu more bytes\n", 
++		      (unsigned long) fillamt);
++		u.uio_resid += fillamt;
++		result = uiomovezeros(fillamt, &u);
++	}
++	
++	*newframe = (vaddr_t)new_frame;
++	return result;
++}
++
++
++int
++as_complete_load(struct addrspace *as)
++{
++	(void)as;
++	return 0;
++}
++
++int
++as_define_stack(struct addrspace *as, vaddr_t *stackptr)
++{
++	//assert(as->as_stackpbase != 0);
++
++	*stackptr = USERSTACK;
++	return 0;
++}
++
++int
++as_define_heap(struct addrspace *as, vaddr_t *heapptr)
++{
++	
++	vaddr_t heapbase= as->as_region[1].p_vaddr + as->as_region[1].p_memsz;
++
++	if(heapbase & ~PAGE_FRAME)
++	{	
++		*heapptr = (heapbase & PAGE_FRAME) + PAGE_SIZE ;
++	}
++	else
++		*heapptr=heapbase;
++		as->breakaddr=*heapptr;
++
++	return 0;
++}
++
++int
++as_copy(struct addrspace *old, struct addrspace **ret)
++{
++	struct addrspace * new;
++	int result;
++
++	new = as_create();
++	if (new==NULL) {
++		return ENOMEM;
++	}
++	
++
++	new->as_segnum = old->as_segnum;
++
++	new->as_region = (struct region *)kmalloc(new->as_segnum * sizeof(struct region));
++	if (new->as_region == NULL){
++		return ENOMEM;
++	}
++
++
++	//Copy all parents regions info into the child
++	int i =0 ;
++	for (i = 0; i < new->as_segnum; i++){
++		new->as_region[i].p_vaddr = old->as_region[i].p_vaddr;
++		new->as_region[i].p_offset = old->as_region[i].p_offset;
++		new->as_region[i].p_filesz = old->as_region[i].p_filesz;
++		new->as_region[i].p_memsz = old->as_region[i].p_memsz;
++		new->as_region[i].p_flags = old->as_region[i].p_flags;
++	} 
++
++	new->as_stackvbase = old->as_stackvbase;
++	new->as_heapvtop = old->as_heapvtop;
++
++	//both parent and child are pointing to the same file intially
++	
++	new->v = old->v;
++	VOP_INCREF(new->v);
++
++
++    // Now we need to to make a copy of parents page table for child
++    // Since we might run out of memory at any point we have to make sure
++    // change the parent page table (making it read only)once we are sure
++    // that child page tables are completely set up and is ready to run.  
++	// We copy them here
++
++	result = pt_copy(old->page_table, & (new->page_table));
++	if (result){
++		VOP_DECREF(new->v); // Decrement refrence count by 1. when reference count is 0, file close
++		// Destroy address space
++		// Destroy new page tables
++		if (new->page_table)
++			pt_destroy(new->page_table);
++	}
++		
++	
++	*ret = new;
++	return 0;
++}
+Index: kern/arch/mips/mips/coremap.c
+===================================================================
+--- kern/arch/mips/mips/coremap.c	(.../tags/asst3-start)	(revision 0)
++++ kern/arch/mips/mips/coremap.c	(.../trunk)	(revision 95)
+@@ -0,0 +1,234 @@
++#include <machine/coremap.h>
++
++
++
++static int COREMAP_SIZE = 0;		/* Number of frames we are to manage in physical memory */
++
++static u_int32_t FRAME0_ADDR;		/* Address of frame correpoding to coremap[0] frame manged by coremap i.e 51 */ 
++
++static int UNALLOCATED_FRAME; 		/* Keeps track of number of unallocated frames */
++static int KERNEL_FRAME; 			/* Number of kernel frames */
++static int USER_FRAME;				/* Number of user frames */
++
++struct frame_info * coremap;
++
++
++int VM_INITIALIZED;
++
++
++void coremap_initialization ()
++{
++	UNALLOCATED_FRAME = 0;
++	KERNEL_FRAME = 0;
++	USER_FRAME = 0;
++	u_int32_t lo; 
++	u_int32_t hi;
++	int free_frames_num;
++	ram_getsize(&lo, &hi);
++	hi -= PAGE_SIZE;
++
++	// Finding number of free frames
++	free_frames_num = ((hi-lo)/PAGE_SIZE)+1;
++
++	// sizeof(frame_info) * COREMAP_SIZE + COREMAP_SIZE * PAGE_SIZE = free_frames_num * PAGE_SIZE
++	COREMAP_SIZE = free_frames_num * PAGE_SIZE/(PAGE_SIZE + sizeof(struct frame_info));
++
++	int npages = (COREMAP_SIZE * sizeof(struct frame_info)/PAGE_SIZE) + 1;
++	//vaddr_t addr = alloc_kpages(npages);
++
++	//coremap = (struct frame_info *)kmalloc(COREMAP_SIZE * sizeof(struct frame_info));
++	coremap = (struct frame_info *)kmalloc(npages * PAGE_SIZE);
++
++	bzero(coremap, COREMAP_SIZE * sizeof (struct frame_info));
++
++	ram_getsize(&lo, &hi);
++	FRAME0_ADDR = lo;
++	UNALLOCATED_FRAME = COREMAP_SIZE;
++	KERNEL_FRAME = 0;
++	USER_FRAME = 0;
++
++	//******
++	// paddr_t a = allocate_frame(5);
++	//free_frame(PADDR_TO_KVADDR(a));
++	VM_INITIALIZED = 1;
++}
++
++
++
++void coremap_printstats()
++{
++	int spl = splhigh();
++
++	kprintf ("***********Coremape Status Is**************** \n");
++	kprintf ("UNALLOCATED FRAMES: %d\nKERNEL FRAME: %d\nUSER FRAME: %d\n",
++	 UNALLOCATED_FRAME, KERNEL_FRAME, USER_FRAME);
++	
++
++	splx(spl);
++}
++
++
++
++
++
++
++
++
++
++
++
++/*
++* Aloocate n frame of memory, retrun physical address of first frame
++*/
++paddr_t allocate_frame(int n)
++{
++	
++	int i, j, index;
++	int found = 0;
++	//coremap[2].status = 1;
++	//coremap[8].status =1; 
++
++	int spl = splhigh();
++	if (n > UNALLOCATED_FRAME)
++	{
++		//kprintf("OH NO ALLOCATION for %d frame\n",n);
++		splx(spl);
++		return 0;
++	}
++
++	i = 0;
++	while (i < COREMAP_SIZE-(n-1))
++	{	
++		for (j = 0; j < n; j++)
++			if (coremap[i+j].status != 0)
++				break;
++
++		if (j == n)
++		{
++			index = i;
++			found = 1;
++			break;
++		}
++		i += j+1;
++	}
++
++	if (found == 1)
++	{
++		int k;
++		int allocation_size = n;
++		for (k = index; k < index+n; k++)
++		{
++			coremap[k].status = KERNEL_ALLOCATED;
++			coremap[k].alloc_size = allocation_size;
++			allocation_size--;
++		}
++		UNALLOCATED_FRAME -=n;
++		KERNEL_FRAME += n;
++		//kprintf("allocting %d frame ***** unallocated frame == %d\n",n, UNALLOCATED_FRAME);
++		
++		paddr_t temp = FRAME0_ADDR + index * PAGE_SIZE;
++		//kprintf("address retuning by alloc_frame is 0x%x\n",FRAME0_ADDR + index * PAGE_SIZE );
++		splx(spl);
++		return (FRAME0_ADDR + index * PAGE_SIZE);
++	}
++
++	//kprintf("OH NO ALLOCATION\n");
++	splx(spl);
++	return 0;
++
++}
++
++/*
++* Free block of frames, starting at frame
++*/
++int callz=0;
++int free_frame(vaddr_t addr)
++{
++	//kprintf("in free frame\n");
++	int spl = splhigh();
++	//kprintf("In free_frame callz=%d\n",callz++);
++
++	paddr_t address = addr-MIPS_KSEG0;
++	//kprintf("paddr_t = %x\n", address);
++	//if (address % PAGE_SIZE != 0){
++	//	kprintf("************the address is %x",address);
++	//	return 0;
++	//}
++	//kprintf("in free frame\n");
++	int frame_index = (address - FRAME0_ADDR)/PAGE_SIZE;
++
++	int n = 0;
++	while (frame_index < COREMAP_SIZE)
++	{
++
++		n++;
++		//kprintf("here 0.0\n");
++		if (coremap[frame_index].alloc_size == 1)
++		{
++			//kprintf("here 0.2a\n");
++			bzero(coremap+frame_index, sizeof (struct frame_info));
++			//kprintf("here 0.2b\n");
++			break;
++		}
++        //kprintf("here 0.3a\n");
++		bzero(coremap+frame_index, sizeof (struct frame_info));
++		//kprintf("here 0.3b\n");
++		frame_index++;
++	}
++
++	UNALLOCATED_FRAME +=n;
++	KERNEL_FRAME -= n;
++	//kprintf("deallocting %d frame \n",n);
++    //kprintf("exiting freeframe\n");
++    //kprintf("returning from free frame\n");
++	splx(spl); 
++	return 0; 
++}
++
++/*
++* Map physical address (frame) to virtual address (page_nr, pid)
++* NOTE: a frame may be mapped to multiple pages in the same or 
++* Different address spaces.
++*/
++int map (int pid, int page_nr, int frame)
++{
++
++}
++
++
++/*
++* Removes mapping of frame corresponding to pgae_nr from address space
++*/
++int unmap (int pid, int page_nr)
++{
++
++}
++
++void increfcount(paddr_t frameaddr)
++{
++	int index;
++
++	index = (frameaddr - FRAME0_ADDR)/PAGE_SIZE;
++	//kprintf("Im here increcout with index %d and frameaddr 0x%x\n", index, frameaddr);
++	coremap[index].shared += 1; 
++	//kprintf("Im here increcoutffff\n");
++}
++
++
++void decrefcount(paddr_t frameaddr)
++{
++	int index;
++
++	index = (frameaddr - FRAME0_ADDR)/PAGE_SIZE;
++	coremap[index].shared -= 1; 
++}
++
++
++
++int isShared (paddr_t frameaddr)
++{
++	int index;
++
++	index = (frameaddr - FRAME0_ADDR)/PAGE_SIZE;
++	return coremap[index].shared;
++}
+Index: kern/vm/page_table.c
+===================================================================
+--- kern/vm/page_table.c	(.../tags/asst3-start)	(revision 0)
++++ kern/vm/page_table.c	(.../trunk)	(revision 95)
+@@ -0,0 +1,354 @@
++#include <kern/errno.h>
++#include <page_table.h>
++#include <machine/vm.h>
++#include <machine/tlb.h>
++#include <elf.h>
++#include <types.h>
++#include <kern/errno.h>
++#include <kern/unistd.h>
++#include <lib.h>
++#include <machine/coremap.h>
++#include <vm.h>
++
++
++
++u_int32_t * pt_create()
++{
++	u_int32_t * addr = (u_int32_t *) kmalloc(4096);
++
++	if (addr)
++		bzero(addr, 4096);
++	else
++		return NULL;
++
++	return addr;
++}
++
++
++int pt_copy(u_int32_t * old_pt, u_int32_t ** new_pt)
++{
++	int i;
++	vaddr_t old_second_pt;
++	vaddr_t new_second_pt;
++
++	*new_pt = (u_int32_t *) kmalloc(4096);
++
++	if (*new_pt == NULL) {
++		return ENOMEM;
++	}
++	bzero(*new_pt, 4096);
++
++	for (i = 0; i < 1024; i++){
++		if (old_pt[i] != 0){
++
++			old_second_pt = PADDR_TO_KVADDR(old_pt[i]);
++			// Allocate new_second_pt 
++			new_second_pt = (vaddr_t) kmalloc(4096);
++			//paddr_t temp = new_second_pt - 0x80000000;
++			//kprintf("**************temp is %x\n",temp);
++			bzero((void *)new_second_pt, 4096);
++
++			if (new_second_pt == NULL) {
++				return ENOMEM;
++			}
++
++			// Update new_pt entry
++			//paddr_t temp = new_second_pt - 0x80000000;
++			(*new_pt)[i] = (paddr_t)KVADDR_TO_PADDR(new_second_pt);
++			//kprintf("pt_copy 0x%x\n",(*new_pt)[i]);
++
++			// Copy old_second_pt into new_second_pt
++			memmove((void *)new_second_pt, (const void *)old_second_pt, PAGE_SIZE);
++
++		}
++	}
++	return 0;
++
++}
++
++
++/// when vm_fault happen we pass the fault address to get the frame number correpoding 
++/// to that page if frame exists then we return frame number otherwise do these things in fault handler: 
++/// if return = NO_SECOND_LEVEL_PT: 1) Allocate second level PT 
++///									2) update first_pt entry correponding to the faultaddress
++///									3) Allocate a frame for user
++///									4) read from disk to user frame;
++///									5) Update the second level page table correponding to the faultaddress
++///									6) update TLB for fault addr
++
++/// if return = INVALID: No frame found in memory:  1) Allocate a frame for user if no frame availabe need to schedule swapping
++///													2) read from disk to user frame;
++///													3) Update the second level page table correponding to the faultaddress
++///													4) update TLB for fault addr 
++/// if return = SWAPPED: // decide later
++int32_t pt_lookup (u_int32_t * page_table , vaddr_t faultaddress, int faulttype,  int * entrylo)
++{
++	//assert (page_table);
++
++	// Calculate index to first page table from faultaddress
++	u_int32_t index_1 = faultaddress >> 22;
++
++	if (page_table[index_1] == 0)
++		return NO_SECOND_LEVEL_PT;
++
++	// Here we have valid frame number for second level pt
++	// so we calculate the kernel virtual address of second level pt
++	paddr_t psecond_pt = page_table[index_1];
++	u_int32_t * second_pt = (u_int32_t *) PADDR_TO_KVADDR(psecond_pt); 
++
++	// Calculate index to second page table from faultaddress
++	u_int32_t index_2 = (faultaddress >> 12) & SECOND_INDEX;
++
++	// Now read the PTE and check if it is valid 
++	int valid = second_pt[index_2] & TLBLO_VALID;
++
++	if (valid)
++	{
++		if (faulttype == VM_FAULT_READONLY )
++		{
++			*entrylo = second_pt[index_2] & (~PTE_READONLY);
++			if (second_pt[index_2] & TLBLO_DIRTY)
++				return WRITE_PERMITTED;
++			else
++				return WRITE_NOT_PERMITTED;
++		}
++
++		else
++		{
++			if (second_pt[index_2] & PTE_READONLY)
++				*entrylo = second_pt[index_2] & (~TLBLO_DIRTY);
++
++			else
++				 *entrylo = second_pt[index_2];
++
++			return PTE_FOUND;
++		}	
++	}
++
++	else
++	{
++		int swapped = 0;
++		if (swapped)
++			return SWAPPED;
++		else
++			return INVALID;
++	}
++
++}
++
++
++
++
++void update_first_pt_entry(u_int32_t * page_table, vaddr_t faultaddress, vaddr_t second_pt)
++{
++	u_int32_t index_1;
++	paddr_t frameaddress;
++
++	// Calculate index to first page table from faultaddress
++	index_1 = faultaddress >> 22;
++
++	//Calculate the frame number associated to second_pt and store it in page_table[index_1]
++	frameaddress = (KVADDR_TO_PADDR(second_pt)); 
++
++	page_table[index_1] = 0;
++	page_table[index_1] = frameaddress;
++	//kprintf("update_first_pt_entry 0x%x index =%d\n",page_table[index_1], index_1);
++
++}
++
++
++void update_second_pt_entry(u_int32_t * page_table, vaddr_t faultaddress, vaddr_t frameaddress, u_int32_t flags, int * entrylo)
++{
++
++	// Calculate index to first page table from faultaddress
++	u_int32_t index_1 = faultaddress >> 22;
++
++	paddr_t psecond_pt = page_table[index_1];
++	u_int32_t * second_pt = (u_int32_t *) PADDR_TO_KVADDR(psecond_pt); 
++
++	// Calculate index to second page table from faultaddress
++	u_int32_t index_2 = (faultaddress >> 12) & SECOND_INDEX;
++
++	frameaddress = (paddr_t)(KVADDR_TO_PADDR(frameaddress));
++	second_pt[index_2] = 0;
++	second_pt[index_2] = frameaddress;
++	//kprintf("update_second_pt_entry 0x%x index %d \n",second_pt[index_2], index_2);
++
++	// Now set the control bits
++
++	//set valid bits
++	second_pt[index_2] = (second_pt[index_2] | TLBLO_VALID);
++
++	//set writable bits if the page is writable the permission can be determined by checking flags
++	if ((flags & PF_W)){
++		second_pt[index_2] = (second_pt[index_2] | TLBLO_DIRTY);
++	}
++
++	*entrylo = second_pt[index_2];
++}
++
++
++void make_readonly(u_int32_t * page_table, int coremap_update)
++{
++	int i, j;
++	u_int32_t * second_pt;
++
++	for (i = 0; i < 1024; i++) 
++	{
++
++		if (page_table[i] != 0) 
++		{
++			second_pt = PADDR_TO_KVADDR(page_table[i]);
++			for (j = 0; j < 1024; j++)
++			{
++				if (second_pt[j] & TLBLO_VALID)
++				{	
++					if (!coremap_update);
++						//kprintf("parent &&&&&&&& 0x%x index = %d\n", (second_pt[j] & TLBLO_PPAGE), j);
++					else
++						//kprintf("child &&&&&&&& 0x%x index = %d\n", (second_pt[j] & TLBLO_PPAGE), j);
++					second_pt[j] = second_pt[j] | PTE_READONLY;
++					if (coremap_update)
++					{
++						//kprintf("&&&&&&&& 0x%x index = %d\n", (second_pt[j] & TLBLO_PPAGE), j);
++						increfcount(second_pt[j] & TLBLO_PPAGE);
++					}
++				}
++
++			}
++
++		}
++
++	}
++}
++
++
++
++int pt_copy_on_write (u_int32_t * page_table, vaddr_t faultaddress, int * entrylo)
++{
++	/*
++	* General overview of what needs to be done:
++	* 1) Go to my page table and get the current frame that faultaddress is mapped to.
++	* 2) Check whether that frame is shared or not
++	* 3) if not shared then get rid of the readonly bit in the pte. 
++	* 4) if shared then first decrement reference count of the frame
++	*    then allocate a new frame, copy the content of old frame into the new one,
++	     update the pte accordingly and the return. 
++	*/
++
++	kprintf("doing ccccccoooooppppy  ooonnnn wriiite \n");
++
++	// Calculate index to first page table from faultaddress
++	u_int32_t index_1 = faultaddress >> 22;
++
++	// Here we have valid frame number for second level pt
++	// so we calculate the kernel virtual address of second level pt
++	paddr_t psecond_pt = page_table[index_1];
++	u_int32_t * second_pt = (u_int32_t *) PADDR_TO_KVADDR(psecond_pt); 
++
++	// Calculate index to second page table from faultaddress
++	u_int32_t index_2 = (faultaddress >> 12) & SECOND_INDEX;
++
++	paddr_t frameaddr = second_pt[index_2] & TLBLO_PPAGE;
++
++	if (isShared (frameaddr))
++	{
++		decrefcount(frameaddr);
++		vaddr_t newframeaddr = (vaddr_t)kmalloc(PAGE_SIZE);
++		if (!newframeaddr){
++			return ENOMEM;
++		}
++
++		memmove((void *)newframeaddr, (const void *) (PADDR_TO_KVADDR(frameaddr)), PAGE_SIZE);
++		//memcpy((void *)newframeaddr, (const void *) (PADDR_TO_KVADDR(frameaddr)), PAGE_SIZE);
++
++		second_pt[index_2] = KVADDR_TO_PADDR(newframeaddr) | TLBLO_DIRTY | TLBLO_VALID;
++		//kprintf("copy on write 0x%x \n ",second_pt[index_2]);
++
++		*entrylo = second_pt[index_2];
++		return 0;
++
++	}
++
++	else
++	{
++		second_pt[index_2] = second_pt[index_2] & (~PTE_READONLY);
++		*entrylo = second_pt[index_2];
++		return 0;
++	}
++
++
++}
++
++
++
++void pt_deep_destroy(u_int32_t * page_table)
++{
++	int i, j;
++	u_int32_t * second_pt;
++	paddr_t frameaddr;
++	/* General overview of what needs to be done
++	* 1) Go through the first level page table
++	* 2) Find all second level pages tables
++	* 3) Go through second level page table entries and check if they are valid
++	* 4) if they are valid following needs to be done: i) Find the frame they are pointing to
++	*												   ii) if frame is shared then just decrement the refcount
++	*												   iii) otherwise free the frame
++    *
++	* 5) then free the second level page table
++	* 6) after all free the first level page table 
++	*/
++
++	assert(page_table != NULL)
++
++	for (i = 0; i < 1024; i++)
++	{
++		if (page_table[i] != 0)
++		{
++			second_pt = PADDR_TO_KVADDR(page_table[i]);
++
++			for (j = 0; j < 1024; j++)
++			{
++				if (second_pt[j] & TLBLO_VALID)
++				{
++					frameaddr = second_pt[j] & TLBLO_PPAGE;
++					if (isShared (frameaddr))
++					{
++						// just decrement reference count
++						decrefcount(frameaddr);
++
++					}
++
++					else
++					{
++						// We need to free the frame since this was the last process using it
++						kfree (PADDR_TO_KVADDR(frameaddr));
++					}
++
++				}
++			}
++			kfree(second_pt);
++		}
++	}
++	// Now free the first level page table
++	kfree(page_table);
++}
++
++
++
++/* just destory page tables */
++void pt_destroy(u_int32_t * page_table)
++{
++	int i;
++	u_int32_t * second_pt;
++
++	for (i = 0; i < 1024; i++)
++	{
++		if (page_table[i] != 0 )
++		{
++			second_pt = PADDR_TO_KVADDR(page_table[i]);
++			kfree(second_pt);
++		}
++	}
++	kfree(page_table);
++}
+Index: kern/vm/addrspace.c
+===================================================================
+--- kern/vm/addrspace.c	(.../tags/asst3-start)	(revision 95)
++++ kern/vm/addrspace.c	(.../trunk)	(revision 95)
+@@ -1,131 +0,0 @@
+-#include <types.h>
+-#include <kern/errno.h>
+-#include <lib.h>
+-#include <addrspace.h>
+-#include <vm.h>
+-
+-/*
+- * Note! If OPT_DUMBVM is set, as is the case until you start the VM
+- * assignment, this file is not compiled or linked or in any way
+- * used. The cheesy hack versions in dumbvm.c are used instead.
+- */
+-
+-struct addrspace *
+-as_create(void)
+-{
+-	struct addrspace *as = kmalloc(sizeof(struct addrspace));
+-	if (as==NULL) {
+-		return NULL;
+-	}
+-
+-	/*
+-	 * Initialize as needed.
+-	 */
+-
+-	return as;
+-}
+-
+-int
+-as_copy(struct addrspace *old, struct addrspace **ret)
+-{
+-	struct addrspace *newas;
+-
+-	newas = as_create();
+-	if (newas==NULL) {
+-		return ENOMEM;
+-	}
+-
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)old;
+-	
+-	*ret = newas;
+-	return 0;
+-}
+-
+-void
+-as_destroy(struct addrspace *as)
+-{
+-	/*
+-	 * Clean up as needed.
+-	 */
+-	
+-	kfree(as);
+-}
+-
+-void
+-as_activate(struct addrspace *as)
+-{
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)as;  // suppress warning until code gets written
+-}
+-
+-/*
+- * Set up a segment at virtual address VADDR of size MEMSIZE. The
+- * segment in memory extends from VADDR up to (but not including)
+- * VADDR+MEMSIZE.
+- *
+- * The READABLE, WRITEABLE, and EXECUTABLE flags are set if read,
+- * write, or execute permission should be set on the segment. At the
+- * moment, these are ignored. When you write the VM system, you may
+- * want to implement them.
+- */
+-int
+-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
+-		 int readable, int writeable, int executable)
+-{
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)as;
+-	(void)vaddr;
+-	(void)sz;
+-	(void)readable;
+-	(void)writeable;
+-	(void)executable;
+-	return EUNIMP;
+-}
+-
+-int
+-as_prepare_load(struct addrspace *as)
+-{
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)as;
+-	return 0;
+-}
+-
+-int
+-as_complete_load(struct addrspace *as)
+-{
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)as;
+-	return 0;
+-}
+-
+-int
+-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
+-{
+-	/*
+-	 * Write this.
+-	 */
+-
+-	(void)as;
+-
+-	/* Initial user-level stack pointer */
+-	*stackptr = USERSTACK;
+-	
+-	return 0;
+-}
+-

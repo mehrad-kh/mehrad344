@@ -1,0 +1,281 @@
+/*
+ * Synchronization primitives.
+ * See synch.h for specifications of the functions.
+ */
+
+#include <types.h>
+#include <lib.h>
+#include <synch.h>
+#include <thread.h>
+#include <curthread.h>
+#include <machine/spl.h>
+#include <queue.h>
+
+////////////////////////////////////////////////////////////
+//
+// Semaphore.
+
+struct semaphore *
+sem_create(const char *namearg, int initial_count)
+{
+	struct semaphore *sem;
+
+	assert(initial_count >= 0);
+
+	sem = kmalloc(sizeof(struct semaphore));
+	if (sem == NULL) {
+		return NULL;
+	}
+
+	sem->name = kstrdup(namearg);
+	if (sem->name == NULL) {
+		kfree(sem);
+		return NULL;
+	}
+
+	sem->count = initial_count;
+	return sem;
+}
+
+void
+sem_destroy(struct semaphore *sem)
+{
+	int spl;
+	assert(sem != NULL);
+
+	spl = splhigh();
+	assert(thread_hassleepers(sem)==0);
+	splx(spl);
+
+	/*
+	 * Note: while someone could theoretically start sleeping on
+	 * the semaphore after the above test but before we free it,
+	 * if they're going to do that, they can just as easily wait
+	 * a bit and start sleeping on the semaphore after it's been
+	 * freed. Consequently, there's not a whole lot of point in 
+	 * including the kfrees in the splhigh block, so we don't.
+	 */
+
+	kfree(sem->name);
+	kfree(sem);
+}
+
+void 
+P(struct semaphore *sem)
+{
+	int spl;
+	assert(sem != NULL);
+
+	/*
+	 * May not block in an interrupt handler.
+	 *
+	 * For robustness, always check, even if we can actually
+	 * complete the P without blocking.
+	 */
+	assert(in_interrupt==0);
+
+	spl = splhigh();
+	while (sem->count==0) {
+		thread_sleep(sem);
+	}
+	assert(sem->count>0);
+	sem->count--;
+	splx(spl);
+}
+
+void
+V(struct semaphore *sem)
+{
+	int spl;
+	assert(sem != NULL);
+	spl = splhigh();
+	sem->count++;
+	assert(sem->count>0);
+	thread_wakeup(sem);
+	splx(spl);
+}
+
+////////////////////////////////////////////////////////////
+//
+// Lock.
+
+struct lock *
+lock_create(const char *name)
+{
+	struct lock *lock;
+	/*Creating the lock*/
+	lock = kmalloc(sizeof(struct lock)); 
+	if (lock == NULL) {
+		return NULL;
+	}
+
+	/*Initializing the paramerters*/
+	lock->name = kstrdup(name);	//copying the name
+	if (lock->name == NULL) {
+		kfree(lock);
+		return NULL;
+	}
+	lock->state=0;	// intitializing the lock state to zero ( initially unlock)
+	lock->id=NULL; //initializing the lock identifire
+	
+	return lock;
+}
+
+void
+lock_destroy(struct lock *lock)
+{
+	int spl;
+	/*Error checking*/
+	assert(lock != NULL);	// checking if lock is not null
+
+	/*Checking if nobody is is sleeping on this*/
+	spl = splhigh();	// thread functions should be called with no intrupts
+	assert(thread_hassleepers(lock)==0);	
+	splx(spl);
+
+	/*Free the memory related to this lock*/
+	kfree(lock->name);	// free name #include <types.h>array
+	kfree(lock);	//Free memory related to lock itself
+}
+
+void
+lock_acquire(struct lock *lock)
+{
+	int spl;
+
+	/*Error checking*/
+	assert(lock != NULL);	// checking if lock is not null
+        
+	/*Atomic Reading & making decision &| writing */ 
+	spl=splhigh();
+	while (lock->state)	//Checking if anybody has the lock 
+		thread_sleep(lock);	// sleep on the lock name. Note Thread function is called with Intr off
+	lock->state=1;	// acquiring the lock
+	splx(spl);
+	
+	/**************************************************************
+	*	We are now in critical section with intrupt enabled   *
+	***************************************************************/
+
+	/* Initializing the Thread_name ( Identifier)*/
+	lock->id=curthread; // using the current thread as the lock id
+			    // No need to have this in intrupt disabled area.
+}
+
+void
+lock_release(struct lock *lock)
+{
+	/*Error checking*/
+	assert(lock != NULL);	// checking if lock is not null
+
+	/*Atomic writing & freeing memory*/
+	int spl=splhigh();
+	lock->id=NULL;	// changing the lock's id to NULL
+	lock->state=0;	// Releasign the lock
+	thread_wakeup(lock); //Wakeing up all the threads sleeping on the lock name
+			     //NOTE. The intrupt should be off to call wakeup !!!
+	splx(spl);
+}
+
+int
+lock_do_i_hold(struct lock *lock)
+{
+	int spl;
+	int result=0;
+	
+	/*Error checking*/
+	assert(lock != NULL);	// checking if lock is not null
+
+	/* Checking if current thread's name matches the lock identifier*/
+	spl=splhigh();	
+	if (lock->id==curthread)	//Checking if the lock_id maches the current thread
+		result= 1;
+	splx(spl);
+	return result;
+}
+
+////////////////////////////////////////////////////////////
+//
+// CV
+
+
+struct cv *
+cv_create(const char *name)
+{
+	struct cv *cv;
+
+	cv = kmalloc(sizeof(struct cv));
+	if (cv == NULL) {
+		return NULL;
+	}
+
+	cv->name = kstrdup(name);
+	if (cv->name==NULL) {
+		kfree(cv);
+		return NULL;
+	}
+	
+	cv->slept_threads = q_create(10);
+	if (cv->slept_threads == NULL) {
+		return NULL;
+	}
+	cv->lock=NULL;
+	cv->sleepers_array=q_create(32); // 32 is maximum thread number
+	return cv;
+}
+
+void
+cv_destroy(struct cv *cv)
+{
+	assert(cv != NULL);
+    
+    //int spl = splhigh();
+
+	q_destroy(cv->slept_threads);
+	
+	kfree(cv->name);
+	q_destroy(cv->sleepers_array); //freeing the memory related to q
+	kfree(cv);
+	//splx(spl);
+}
+
+void
+cv_wait(struct cv *cv, struct lock *lock)
+{
+	int spl;
+	char dummy;
+	/*Atomic instruction*/
+	lock_release(lock);
+	spl=splhigh();
+	q_addtail(cv->sleepers_array,curthread->t_name); // advancing the q
+	thread_sleep(curthread->t_name); // sleeping on the newest item in the q
+	splx(spl);
+	lock_acquire(lock);
+	/*(void)cv;    // suppress warning until code gets written
+	(void)lock;  // suppress warning until code gets written*/
+}
+
+void
+cv_signal(struct cv *cv, struct lock *lock)
+{
+	int spl;
+	spl=splhigh();
+	thread_wakeup(q_remhead(cv->sleepers_array)); // waking up only one of thread sleeping on cv
+	splx(spl);
+	/*(void)cv;    // suppress warning until code gets written
+	(void)lock;  // suppress warning until code gets written*/
+}
+
+void
+cv_broadcast(struct cv *cv, struct lock *lock)
+{
+	// Write this
+	int spl;
+	spl=splhigh();
+	while (q_getstart(cv->sleepers_array)!=q_getend(cv->sleepers_array)){
+		thread_wakeup(q_remhead(cv->sleepers_array)); // waking up only one of thread sleeping on cv
+	}
+	splx(spl);
+	//(void)cv;    // suppress warning until code gets written
+	//(void)lock;  // suppress warning until code gets written
+}

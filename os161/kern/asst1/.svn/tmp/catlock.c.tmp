@@ -1,0 +1,317 @@
+/*
+ * catlock.c
+ *
+ * 30-1-2003 : GWA : Stub functions created for CS161 Asst1.
+ *
+ * NB: Please use LOCKS/CV'S to solve the cat syncronization problem in 
+ * this file.
+ */
+
+
+/*
+ * 
+ * Includes
+ *
+ */
+
+#include <types.h>
+#include <lib.h>
+#include <test.h>
+#include <thread.h>
+#include <synch.h>
+
+
+/*
+ * 
+ * Constants
+ *
+ */
+
+/*
+ * Number of food bowls.
+ */
+
+#define NFOODBOWLS 2
+
+/*
+ * Number of cats.
+ */
+
+#define NCATS 6
+
+/*
+ * Number of mice.
+ */
+
+#define NMICE 2
+
+struct house {
+	int bowls[NFOODBOWLS];
+	int cat[NCATS];
+	int mouse[NMICE];
+	int busybowl;
+	int busycat;
+	int busymouse;
+	struct lock * lock;
+	struct cv * cat_spot;
+	struct cv * mouse_spot;
+
+<<<<<<< .mine
+struct lock bowl[2];
+=======
+};
+>>>>>>> .r31
+/*
+ * 
+ * Function Definitions
+ * 
+ */
+
+/* who should be "cat" or "mouse" */
+static void
+lock_eat(const char *who, int num, int bowl, int iteration)
+{
+        kprintf("%s: %d starts eating: bowl %d, iteration %d\n", who, num, 
+                bowl, iteration);
+        clocksleep(1);
+        kprintf("%s: %d ends eating: bowl %d, iteration %d\n", who, num, 
+                bowl, iteration);
+}
+
+/*
+ * catlock()
+ *
+ * Arguments:
+ *      void * unusedpointer: currently unused.
+ *      unsigned long catnumber: holds the cat identifier from 0 to NCATS -
+ *      1.
+ *
+ * Returns:
+ *      nothing.
+ *
+ * Notes:
+ *      Write and comment this function using locks/cv's.
+ *
+ */
+
+static
+void
+catlock(void * HOUSE, 
+        unsigned long catnumber)
+{
+<<<<<<< .mine
+        int s = rand()%2;
+        if (bowl[0]->busy && bowl[1]->busy)
+            lock_acquire(bowl[s]);
+=======
+	int i=0;
+	kprintf("cat %d ALIVE -_-\n", (int)catnumber);
+	struct house *house=(struct house *) HOUSE;
+	while(house->cat[catnumber]<4)
+	{
+		lock_acquire(house->lock);
+		while( house->busybowl==NFOODBOWLS && house->busymouse>0)
+				cv_wait(house->cat_spot,house->lock);
+>>>>>>> .r31
+
+<<<<<<< .mine
+        else if (!bowl[0]->busy)
+            lock_acquire(bowl[0]);
+
+        else
+            lock_acquire(b)
+
+        (void) unusedpointer;
+        (void) catnumber;
+=======
+
+		for(i=0;i<NFOODBOWLS;i++)
+		{
+			if (!house->bowls[i])
+			{	
+				house->bowls[i]=1;
+				house->busybowl++;
+				house->busycat++;
+				lock_release(house->lock);
+				lock_eat("CAT", catnumber , i, house->cat[catnumber]);
+				lock_acquire(house->lock);
+				house->cat[catnumber]++;
+				house->busybowl--;
+				house->busycat--;
+				house->bowls[i]=0;
+				
+				cv_broadcast(house->cat_spot,house->lock);
+				if (house->busycat == 0)
+					cv_broadcast(house->mouse_spot,house->lock);
+					
+				
+			}
+			
+		}
+		lock_release(house->lock);
+	}
+        kprintf("cat %d DIES X_X\n", (int)catnumber);
+>>>>>>> .r31
+}
+	
+
+/*
+ * mouselock()
+ *
+ * Arguments:
+ *      void * unusedpointer: currently unused.
+ *      unsigned long mousenumber: holds the mouse identifier from 0 to 
+ *              NMICE - 1.
+ *
+ * Returns:
+ *      nothing.
+ *
+ * Notes:
+ *      Write and comment this function using locks/cv's.
+ *
+ */
+
+static
+void
+mouselock(void * HOUSE,
+          unsigned long mousenumber)
+{
+        int i=0;
+	kprintf("MOUSE %d ALIVE -_-\n", (int)mousenumber);
+	struct house *house=(struct house *) HOUSE;
+	while(house->mouse[mousenumber]<4)
+	{
+		lock_acquire(house->lock);
+		while( house->busybowl==NFOODBOWLS || house->busycat>0)
+			cv_wait(house->mouse_spot,house->lock);
+				
+				
+		for(i=0;i<NFOODBOWLS;i++)
+		{
+			if (!house->bowls[i])
+			{	
+				house->bowls[i]=1;
+				house->busybowl++;
+				house->busymouse++;
+				lock_release(house->lock);
+				lock_eat("MOUSE", mousenumber , i, house->mouse[mousenumber]);
+				lock_acquire(house->lock);
+				house->mouse[mousenumber]++;
+				house->busybowl--;
+				house->busymouse--;
+				house->bowls[i]=0;
+				
+				cv_broadcast(house->mouse_spot,house->lock);
+				if (house->busymouse == 0)
+					cv_broadcast(house->cat_spot,house->lock);
+								
+			}
+			
+		}
+		lock_release(house->lock);
+	}
+	kprintf("MOUSE %d DIES X_X\n", (int)mousenumber);
+}
+
+/*
+ * catmouselock()
+ *
+ * Arguments:
+ *      int nargs: unused.
+ *      char ** args: unused.
+ *
+ * Returns:
+ *      0 on success.
+ *
+ * Notes:
+ *      Driver code to start up catlock() and mouselock() threads.  Change
+ *      this code as necessary for your solution.
+ */
+
+int
+catmouselock(int nargs,
+             char ** args)
+{
+        int index, error;
+   
+        /*
+         * Avoid unused variable warnings.
+         */
+
+        (void) nargs;
+        (void) args;
+   
+	/*Initializing the shared data*/
+	struct house * HOUSE= (struct house *) kmalloc(sizeof(struct house));
+	int i=0;
+	for (i=0; i<NFOODBOWLS ; i++)
+		HOUSE->bowls[i]=0;
+	for (i=0; i<NCATS ; i++)
+		HOUSE->cat[i]=0;
+	for (i=0; i<NMICE ; i++)
+		HOUSE->mouse[i]=0;
+	HOUSE->busybowl=0;
+	HOUSE->busycat=0;
+	HOUSE->busymouse=0;
+	HOUSE->lock= lock_create("cat/mouse_lock");
+	HOUSE->cat_spot=cv_create("Busy or cat");
+	HOUSE->mouse_spot=cv_create("Busy or Mouse");
+	//HOUSE->busy=cv_create("Busy");
+	//HOUSE.lock_mouse= lock_create("mouse_lock");
+	
+	
+        /*
+         * Start NCATS catlock() threads.
+         */
+        for (index = 0; index < NCATS; index++) {
+           
+                error = thread_fork("catlock thread", 
+                                    HOUSE, 
+                                    index, 
+                                    catlock, 
+                                    NULL
+                                    );
+                
+                /*
+                 * panic() on error.
+                 */
+
+                if (error) {
+                 
+                        panic("catlock: thread_fork failed: %s\n", 
+                              strerror(error)
+                              );
+                }
+        }
+
+        /*
+         * Start NMICE mouselock() threads.
+         */
+
+        for (index = 0; index < NMICE; index++) {
+   
+                error = thread_fork("mouselock thread", 
+                                    HOUSE, 
+                                    index, 
+                                    mouselock, 
+                                    NULL
+                                    );
+      
+                /*
+                 * panic() on error.
+                 */
+
+                if (error) {
+         
+                        panic("mouselock: thread_fork failed: %s\n", 
+                              strerror(error)
+                              );
+                }
+        }
+
+        return 0;
+}
+
+/*
+ * End of catlock.c
+ */

@@ -1,0 +1,135 @@
+
+/*
+ * Sample/test code for running a user program.  You can use this for
+ * reference when implementing the execv() system call. Remember though
+ * that execv() needs to do more than this function does.
+ */
+
+#include <types.h>
+#include <kern/unistd.h>
+#include <kern/errno.h>
+#include <lib.h>
+#include <addrspace.h>
+#include <thread.h>
+#include <curthread.h>
+#include <vm.h>
+#include <vfs.h>
+#include <test.h>
+
+/*
+ * Load program "progname" and start running it in usermode.
+ * Does not return except on error.
+ *
+ * Calls vfs_open on progname and thus may destroy it.
+ */
+int
+runprogram(char *progname, unsigned long  argc, char ** argv)
+{
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr;
+	int result;
+	char **ARGS;
+
+
+	/* Open the file. */
+	result = vfs_open(progname, O_RDONLY, &v);
+	if (result) {
+		return result;
+	}
+
+	/* We should be a new thread. */
+	assert(curthread->t_vmspace == NULL);
+
+	/* Create a new address space. */
+	curthread->t_vmspace = as_create();
+	if (curthread->t_vmspace==NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Activate it. */
+	as_activate(curthread->t_vmspace);
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* thread_exit destroys curthread->t_vmspace */
+		vfs_close(v);
+		return result;
+	}
+
+	/* Done with the file now. */
+	//vfs_close(v);
+	curthread->t_vmspace->v = v;
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(curthread->t_vmspace, &stackptr);
+	if (result) {
+		/* thread_exit destroys curthread->t_vmspace */
+		return result;
+	}
+
+	/* Warp to user mode. */
+	int i=0;
+	int sum=0;
+	int actual=0;
+	int pointers[16];
+
+	/// Preparing the argument's methadata
+	ARGS = (char**) kmalloc(sizeof(char*)*16);
+	for (i=0;i<argc;i++) 
+	{
+		ARGS[i]=(char*) kmalloc( sizeof(char)*(strlen(argv[i])+1));
+
+		strcpy(ARGS[i],argv[i]);
+		//kprintf(" adding this %s  [%d]\n",ARGS[i],i);
+	}
+
+<<<<<<< .mine
+	//kprintf("we are here\n");
+=======
+	
+>>>>>>> .r86
+	curthread->args=ARGS;
+	curthread->argc=argc;
+<<<<<<< .mine
+	//kprintf(" adding this %s  [%x]\n",curthread->args[0],curthread->args);
+=======
+
+>>>>>>> .r86
+	//preparing the stack
+
+	for (i=0;i<argc;i++) // total number of characters
+		sum+=strlen(argv[i])+1;
+  	stackptr-=(argc+1)* sizeof (vaddr_t)+sum;
+
+<<<<<<< .mine
+	  		if(result){
+	  			//kprintf(" copyoutstr fucked up -_- 0x%x\n",argv[i]);
+				return ENOMEM;
+			}
+
+	  		pointers[i]=stackptr+sum;
+
+			sum+=strlen(argv[i])+1;
+  	}
+
+	pointers[i]=NULL;
+
+  	result=copyout(pointers, stackptr+sum, (argc+1)*sizeof (vaddr_t));
+
+  	if(result){
+		return ENOMEM;
+	} */
+	//kprintf(" pasing %x\n",stackptr+sum );
+=======
+  	
+>>>>>>> .r86
+	md_usermode(argc/*argc*/, stackptr+sum /*userspace addr of argv*/,
+		    stackptr, entrypoint);
+	
+	/* md_usermode does not return */
+	panic("md_usermode returned\n");
+	return EINVAL;
+}
+

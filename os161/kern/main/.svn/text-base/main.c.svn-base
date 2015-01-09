@@ -1,0 +1,791 @@
+/*
+ * Main.
+ */
+
+#include <types.h>
+#include <kern/errno.h>
+#include <kern/unistd.h>
+#include <lib.h>
+#include <machine/spl.h>
+#include <test.h>
+#include <synch.h>
+#include <thread.h>
+#include <curthread.h>
+#include <scheduler.h>
+#include <dev.h>
+#include <vfs.h>
+#include <vm.h>
+#include <machine/trapframe.h> 
+#include <syscall.h>
+#include <version.h>
+#include <hello.h>
+#include <addrspace.h>
+#include <hashtable.h>
+#include <array.h>
+#include <synch.h>
+#include <page_table.h>
+#include <vnode.h>
+
+/*
+ * These two pieces of data are maintained by the makefiles and build system.
+ * buildconfig is the name of the config file the kernel was configured with.
+ * buildversion starts at 1 and is incremented every time you link a kernel. 
+ *
+ * The purpose is not to show off how many kernels you've linked, but
+ * to make it easy to make sure that the kernel you just booted is the
+ * same one you just built.
+ */
+extern const int buildversion;
+extern const char buildconfig[];
+
+/*
+ * Copyright message for the OS/161 base code.
+ */
+static const char harvard_copyright[] =
+    "Copyright (c) 2000, 2001, 2002, 2003\n"
+    "   President and Fellows of Harvard College.  All rights reserved.\n";
+
+/*
+ * The lock designated for locking page table
+ */
+
+struct lock *tlb_lock;
+
+/*
+ * Initial boot sequence.
+ */
+static
+void
+boot(void)
+{
+	/*
+	 * The order of these is important!
+	 * Don't go changing it without thinking about the consequences.
+	 *
+	 * Among other things, be aware that console output gets
+	 * buffered up at first and does not actually appear until
+	 * dev_bootstrap() attaches the console device. This can be
+	 * remarkably confusing if a bug occurs at this point. So
+	 * don't put new code before dev_bootstrap if you don't
+	 * absolutely have to.
+	 *
+	 * Also note that the buffer for this is only 1k. If you
+	 * overflow it, the system will crash without printing
+	 * anything at all. You can make it larger though (it's in
+	 * dev/generic/console.c).
+	 */
+
+	kprintf("\n");
+	kprintf("OS/161 base system version %s\n", BASE_VERSION);
+	kprintf("%s", harvard_copyright);
+	kprintf("\n");
+
+	kprintf("Put-your-group-name-here's system version %s (%s #%d)\n", 
+		GROUP_VERSION, buildconfig, buildversion);
+	kprintf("\n");
+
+	
+
+	ram_bootstrap();
+	//vm_bootstrap();
+
+	tlb_lock=lock_create("TLB LOCK");
+	scheduler_bootstrap();
+	thread_bootstrap();
+	vfs_bootstrap();
+	dev_bootstrap();
+	vm_bootstrap();
+	kprintf_bootstrap();
+
+	/* Default bootfs - but ignore failure, in case emu0 doesn't exist */
+	vfs_setbootfs("emu0");
+
+	/* Initializing the TLB lock*/
+	
+
+	/*
+	 * Make sure various things aren't screwed up.
+	 */
+	assert(sizeof(userptr_t)==sizeof(char *));
+	assert(sizeof(*(userptr_t)0)==sizeof(char));
+}
+
+/*
+ * Shutdown sequence. Opposite to boot().
+ */
+static
+void
+shutdown(void)
+{
+
+	kprintf("Shutting down.\n");
+	
+	vfs_clearbootfs();
+	vfs_clearcurdir();
+	vfs_unmountall();
+
+	splhigh();
+
+	scheduler_shutdown();
+	thread_shutdown();
+}
+
+/*****************************************/
+
+/*
+ * reboot() system call.
+ *
+ * Note: this is here because it's directly related to the code above,
+ * not because this is where system call code should go. Other syscall
+ * code should probably live in the "userprog" directory.
+ */
+int
+sys_reboot(int code)
+{
+	switch (code) {
+	    case RB_REBOOT:
+	    case RB_HALT:
+	    case RB_POWEROFF:
+		break;
+	    default:
+		return EINVAL;
+	}
+
+	shutdown();
+
+	switch (code) {
+	    case RB_HALT:
+		kprintf("The system is halted.\n");
+		md_halt();
+		break;
+	    case RB_REBOOT:
+		kprintf("Rebooting...\n");
+		md_reboot();
+		break;
+	    case RB_POWEROFF:
+		kprintf("The system is halted.\n");
+		md_poweroff();
+		break;
+	}
+
+	panic("reboot operation failed\n");
+	return 0;
+}
+
+/*
+ * Write System call
+ */
+
+int sys_write(int file,const void *buf,size_t n){
+	(void) file;
+  int err=0; 
+  int i=0;
+  if(buf==NULL){
+    //buffer was pointing to NULL 
+    return EFAULT;
+  }
+  //alocating memory in kernel space
+  char *str = (char *) kmalloc(sizeof(char)*n);
+  //cheking if memory allocation was successful
+  if (str==NULL)
+    return ENOSPC;
+  // copying data from user space to kernel space
+  err=copyin((const_userptr_t)buf, str, n);
+  // returning the copyin errors
+  if(err)
+    return err;
+  //printing on IO
+  for(i=0;i<n;i++)
+    putch(str[i]);
+  kfree(str);
+  //returning successful
+  return 0; 
+
+}
+
+int
+sys_read(int fd, void *buf, size_t buflen, int * retval)
+{
+	(void) fd;
+	/* Number of bytes being read not yet returned */
+	int err;
+	/* make sure buf is pointing to a valid addres */
+	if (buf == NULL)
+		return EFAULT;
+	int i=0;
+	char *str = (char *)kmalloc(64 * sizeof(char));
+
+	assert(str != NULL);
+	for (i=0; i<buflen;i++)
+			str[i]=getch();
+	/* Read a string off the console into str */
+	//kgets(str, 64);
+	//kprintf("iiiiiiimmmmmm hhhhherrreee\n");
+	//kprintf("value read was %s\n",str);
+	err = copyout(str, (userptr_t) buf , buflen);
+
+
+	kfree(str);
+	*retval = buflen;
+	return err; 
+}
+
+
+int
+sys_fork(struct trapframe *tf, int *retval)
+{
+	int s = splhigh();
+	int err = 0;
+	/*Allocating a copy of current thread's 
+	* trapframe in the heap so it can be shared 
+	*/
+	
+	struct trapframe * tf_copy = (struct trapframe *)kmalloc(sizeof(struct trapframe));
+	if(tf_copy == NULL)
+	{
+		splx(s);
+		return ENOMEM;
+	}
+	
+	if(tf_copy == NULL)
+	{
+		
+		splx(s);
+		return ENOMEM;
+	}
+
+	*tf_copy = *tf; // short memcopy
+
+
+	struct thread * childthread;
+	err = thread_fork(NULL, tf_copy, 0, md_forkentry, &childthread);
+	if(err)
+	{
+		
+		splx(s);
+		return err;
+	}
+
+	
+	/*************** DATA ALLOCATION TO HANDLE WAIT & EXIT **************/
+
+	/*child_thread->t_name = (char *)kmalloc(20*sizeof(char));
+	snprintf(child_thread->t_name, 20, "%lx",child_thread);
+
+
+	int tid = ht_add_element(process_table, child_thread->t_name, child_thread);
+	if (tid == -1){
+		return -1;
+	}
+	child_thread->tid = tid;
+	child_thread->parent = curthread->tid;
+
+	struct child_info* item = (struct child_info *) kmalloc (sizeof (struct child_info));
+	item->child_tid = tid;
+	item->status = FREE;
+
+	//Adding to cutthread child_list
+	err = array_add(curthread->child_list, item); */
+
+    /******************** END OF DATA ALLOCATION *************************/
+
+	//lock_acquire(tlb_lock);
+	/*err = as_copy(curthread->t_vmspace, &(child_thread->t_vmspace));
+	//lock_release(tlb_lock);
+	if(err)
+	{
+		splx(s);
+		return err;
+	}*/
+
+	// Now we are sure that address space for child has been set up completely so we need to do followings
+	//1) Make both parent and child PTEs read only
+	//2) Increment reference count of involving frame in coremap by 1;
+	//3) Make all the entries in TLB to be readonly.
+	make_readonly(curthread->t_vmspace->page_table, 0);
+	make_readonly(childthread->t_vmspace->page_table, 1);
+	as_make_readonly();
+	//as_activate(curthread->t_vmspace);
+
+	*retval = childthread->tid;
+	
+	splx(s);
+	return 0;
+}
+
+/* Going to wait on process with given tid */
+int sys_wait(int tid, int *status, int option, int * retval)
+{
+	
+	int s = splhigh();
+	struct child_info * child;
+
+	// Check if option requested is valid
+	if (option != 0)
+	{
+		splx(s);
+		return EINVAL;
+	}
+
+	// Check whether tid is my child or not.
+	int n = array_getnum(curthread->child_list);
+	int i = 0;
+	int is_child = 0;
+	int index;
+	for (i = 0; i < n && is_child == 0; i++)
+	{
+		child = (struct child_info *)array_getguy(curthread->child_list, i);
+		if(child->child_tid == tid)
+		{
+			is_child = 1;
+			index = i;
+		}
+	}
+
+	if (is_child == 0) // Can't wait on this tid so retrun error ?????
+	{
+		splx(s);
+		return EINVAL;
+	}
+
+	// if child has not exited yet then I sleep on my chid thread struct address
+	if(child->status != DEAD)
+	{
+		child->status = JOINED;
+		void* slpadr = ht_retrieve_element_by_index(process_table, tid);
+		thread_sleep(slpadr);
+	}
+
+	// Now I am going to read my child ret value. Then unreserve its place in
+	// pcb table and then remove it from my child list.
+	int ret_status = child->ret;
+	process_table->table[child->child_tid] = & (process_table->deleted);
+	array_remove(curthread->child_list, index);
+	
+	int err = copyout(& ret_status, (userptr_t) status, 4);
+
+	if (err)
+	{
+		splx(s);
+		return err;
+	}
+
+	*retval=tid;
+	//*retval=child->ret;
+	///array_remove(curthread->child_list, index);
+	splx(s);
+	return 0;
+}
+
+
+
+int sys_exit(int ret, int *retval)
+{
+
+	struct thread * child_thread;
+	struct thread * parent_thread;
+	struct child_info * child;
+	int n;
+	int i = 0;
+
+	int s = splhigh();
+	
+	// go to its children thread struct (those haven't exited yet) and invalidate their parent field.
+	// Those who have exited (DEAD) they reserved their place so no thread will be assigned the same 
+	// tid as them. So we need to unreserve their place. 
+	n = array_getnum(curthread->child_list);
+
+	for (i = 0; i< n; i++)
+	{
+		child = (struct child_info *)array_getguy(curthread->child_list, i);
+
+		if(child->status != DEAD)
+		{
+			child_thread = (struct thread *) ht_retrieve_element_by_index(process_table, child->child_tid);
+			if (child_thread != NULL)
+				child_thread->parent = -1;		// Invalidating parent field
+		}
+
+		else if (child->status == DEAD)
+		{
+			process_table->table[child->child_tid] = & (process_table->deleted);
+		}
+	}
+
+	// Go to my parent thread struct if my parent field is valid and find yourself in your parent 
+	// child_list make your status DEAD and put your return value there.
+	if(curthread->parent != -1) // Check currentthread's parent exists
+	{
+		parent_thread = (struct thread *)ht_retrieve_element_by_index(process_table, curthread->parent);
+
+		n = array_getnum(parent_thread->child_list); // number of children parent has
+		for (i = 0; i < n; i++)
+		{
+			child = (struct child_info *)array_getguy(parent_thread->child_list, i);
+			if (child->child_tid == curthread->tid)
+			{
+				child->status = DEAD;
+				child->ret = ret;
+				break;
+			}
+		}
+	}
+
+	// if my parent is valid then I reserve my place in process_table so no one will be assigned 
+	// same tid as me until my parent exit when it also unreserve my place.
+	// Otherwirse just remove myself from process_table.
+	if (curthread->parent != -1)
+		process_table->table[curthread->tid] = & (process_table->reserved);
+
+	else 
+		process_table->table[curthread->tid] = & (process_table->deleted);
+
+	thread_wakeup(curthread);
+	//splx(s);
+	thread_exit();
+
+	return 0; // never returns since context switch will happen
+}
+
+
+
+int sys_execv(char* progname, char** arg)
+{
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr;
+	//int s = splhigh();
+	int result;
+	int argc=0;
+	int sum=0;
+	int dummy=0;
+	int i=0;
+	int actual=0;
+	char * temp;
+	int lengths[16];
+	vaddr_t pointers[16];
+	char **ARG;
+	char * PROGNAME;
+	struct addrspace * old_addr=NULL;
+
+	lock_acquire(tlb_lock);
+
+	/**** COPYING DATA FROM USER LEVEL****/
+	ARG = (vaddr_t*) kmalloc(sizeof(vaddr_t)*16);
+
+	for(i=0;i<10;i++)
+		ARG[i]=NULL;
+	
+	if (ARG==NULL){
+
+		result= ENOMEM;
+		goto fail;
+	}
+	PROGNAME= (char *) kmalloc(sizeof(char)*30);
+
+	if (PROGNAME==NULL){
+		result=ENOMEM;
+		goto fail;
+	}
+	result=copyinstr((const_userptr_t) progname, PROGNAME, 30, &actual);
+	if(result){
+		goto fail;
+	}
+
+	
+
+
+  	//kprintf("	ARGUMENTS PASSED TO EXECV:\n");
+  	for(i=0;i<16;i++){
+		if (arg[i]==NULL)
+		{
+			argc=i;
+  			break;
+		}
+  		temp=(char *) kmalloc(sizeof(char)*30);
+		if (temp==NULL){
+			result= ENOMEM;
+			goto fail;
+		}
+  		//ARG[i]=NULL;
+  		//kprintf(" [%d] arguments %s\n",i,arg[i]);
+  		result=copyinstr(arg[i], temp, 30, &actual);
+  		if(result){
+  		//	kprintf("	copyinstr fucked up -_- 0x%x\n",arg[i]);
+			goto fail;
+		}
+
+  		lengths[i]=strlen(arg[i]);
+  		ARG[i]=temp;
+  	}
+
+  	
+
+
+	/**** END OF COPYING DATA FROM USER LEVEL****/
+
+
+	/* saving the old address_space*/
+	old_addr=curthread->t_vmspace;
+
+	/* Open the file. */
+	result = vfs_open(PROGNAME, O_RDONLY, &v);
+	if (result) {
+		//kprintf("	0 ENOME ERRPR\n");
+		goto fail;
+	}
+	/* Create a new address space. */
+	curthread->t_vmspace = as_create();
+	if (curthread->t_vmspace==NULL) {
+		vfs_close(v);
+		//kprintf("	<1 ENOME ERRPR>\n");
+		result= ENOMEM;
+		goto fail;
+	}
+	/* Activate it. */
+	as_activate(curthread->t_vmspace);
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* thread_exit destroys curthread->t_vmspace */
+		vfs_close(v);
+		goto fail;
+	}
+
+	curthread->t_vmspace->v = v;
+	VOP_INCREF(curthread->t_vmspace->v);
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(curthread->t_vmspace, &stackptr);
+	if (result) {
+		/* thread_exit destroys curthread->t_vmspace */
+		goto fail;
+	}
+
+	
+
+
+	/**** COPYING OUT THE MEMORY INTO USER SPACE ***/
+
+	/********* Preparing argument's Methadata ****/
+
+	curthread->args=ARG; // passing the pointer to thread object;
+	curthread->argc=argc;
+
+	/********  preparing the stack *****/
+	sum=0;
+	for (i=0;i<argc;i++) // total number of characters
+		sum+=lengths[i]+1;
+  	stackptr-=(argc+1)* sizeof (vaddr_t)+sum;
+  	
+
+
+    /**************** FREEING MEMORY ************************/
+	/*if (ARG!=NULL && ARG!=0xdeadbeef)
+		kfree(ARG);
+	else 
+	{
+		result =-1;
+		goto fail;
+	}
+	*/
+	if (PROGNAME!=NULL && PROGNAME!=0xdeadbeef)
+		kfree(PROGNAME);
+	else 
+	{
+		result =-1;
+		goto fail;	
+	}
+	/*************** FREEING MEMORY ************************/
+
+
+
+
+	if (old_addr!=NULL && old_addr!=0xdeadbeef)
+	{
+		as_destroy(old_addr);
+	}
+	else 
+	{
+		result -1;
+		goto fail;
+	}
+
+
+
+	lock_release(tlb_lock);
+
+
+
+	/* Warp to user mode. */
+	md_usermode(argc/*argc*/, stackptr+sum /*userspace addr of argv*/,
+		    stackptr, entrypoint);
+	
+
+
+	/* md_usermode does not return */
+	panic("md_usermode returned\n");
+	return 0;
+
+
+
+fail:
+	
+	for (i=0; i <16 && ARG!=NULL && ARG!=0xdeadbeef; i++){
+		
+		if (ARG[i]!=NULL && ARG[i]!=0xdeadbeef)
+			kfree(ARG[i]);
+	}
+	
+
+	if (ARG!=NULL && ARG!=0xdeadbeef)
+		kfree(ARG);
+	if (PROGNAME!=NULL && PROGNAME!=0xdeadbeef )
+		kfree(PROGNAME);
+
+	if(old_addr!=NULL)
+	{
+	as_destroy(curthread->t_vmspace);
+	curthread->t_vmspace = old_addr;
+	as_activate(curthread->t_vmspace);
+	}
+
+	
+	lock_release(tlb_lock);
+	
+	return result;
+
+}
+
+int sys_getpid(int *retval)
+{
+	*retval=curthread->tid;
+	return 0;
+}
+
+int sys_sbrk(intptr_t amount, int * retval){
+
+	struct addrspace *as;
+	int pagen=0;
+	u_int32_t entrylo = 0;
+	vaddr_t newframe;
+	u_int32_t flags = 0;
+	vaddr_t faultaddress = 0;
+	u_int32_t * second_pt;
+	//kprintf(" START heaptop :%x amount %x  PAGE allign ?%x\n",( curthread->t_vmspace->as_heapvtop),amount,((amount + curthread->t_vmspace->as_heapvtop) & ~PAGE_FRAME) );
+	
+	as = curthread->t_vmspace;
+	
+	// Calculate the fault address and pass it to pt_lookup.
+	// Make faulttype = 1
+
+	int lookup = pt_lookup (as->page_table, faultaddress, 1, &entrylo);
+
+	if (lookup == INVALID)
+	{
+		// This means second level pt already exists so just allocate one page and update second pt
+
+		// Allocate one page
+		newframe = (vaddr_t)kmalloc(PAGE_SIZE);
+		if (! newframe){
+			return ENOMEM;
+		}
+		bzero((void *)newframe, PAGE_SIZE);
+
+		// Update Second page table
+		flags = (flags | PF_W);
+		update_second_pt_entry(as->page_table, faultaddress, newframe, flags, &entrylo);
+		
+	}
+
+	else if (lookup == NO_SECOND_LEVEL_PT)
+	{
+		// This means no second level pt exist. 
+		// 1) Allocate one page for second level pt
+		// 2) Update first level pt 
+		// 3) Allocate one page and zero it out
+		// 4) Update sedond level pt
+
+		/// 1)1) Allocate one page for second level pt
+		second_pt =(u_int32_t *) kmalloc(PAGE_SIZE);
+		if (second_pt == NULL){
+			return ENOMEM;
+		}
+		bzero((void *) second_pt, PAGE_SIZE);
+	
+		// 2) Update first level pt 
+		update_first_pt_entry(as->page_table, faultaddress, (vaddr_t) second_pt);
+
+
+		// 3) Allocate one page and zero it out
+		newframe = (vaddr_t)kmalloc(PAGE_SIZE);
+		if (! newframe){
+			return ENOMEM;
+		}
+		bzero((void *)newframe, PAGE_SIZE);
+
+		// Update Second page table
+		flags = (flags | PF_W);
+		update_second_pt_entry(as->page_table, faultaddress, newframe, 1, &entrylo);
+	}
+
+
+		//kprintf("not page alligned !\n ");
+		if ((amount + curthread->t_vmspace-> breakaddr )<= ((curthread->t_vmspace->breakaddr & PAGE_FRAME) +PAGE_SIZE))
+		{
+			pagen=0;
+			*retval= curthread->t_vmspace->breakaddr;
+			if (curthread->t_vmspace->breakaddr+amount <= curthread->t_vmspace->as_stackvbase)
+				curthread->t_vmspace->breakaddr+=amount;
+			else
+			{
+				kprintf("stack goosfand\n");
+				return ENOMEM;
+			}
+			//kprintf("return value!%x \n ",*retval);
+			//kprintf(" END heaptop :%x amount %x  \n",( curthread->t_vmspace->as_heapvtop),amount);
+		}
+		else {
+			pagen=((amount + curthread->t_vmspace->breakaddr) - ((curthread->t_vmspace->breakaddr & PAGE_FRAME) +PAGE_SIZE))/PAGE_SIZE+1;
+			*retval= curthread->t_vmspace->breakaddr;
+
+			if (curthread->t_vmspace->breakaddr+amount <= curthread->t_vmspace->as_stackvbase)
+			{
+				curthread->t_vmspace->breakaddr+=amount;
+				curthread->t_vmspace->as_heapvtop=(pagen+1)*PAGE_SIZE + curthread->t_vmspace->as_heapvtop;
+			}
+			else
+			{
+				kprintf("stack goosfand\n");
+				return ENOMEM;
+			}
+			//kprintf("return value!%x \n ",*retval);
+
+			//kprintf(" END heaptop :%x amount %x  \n",( curthread->t_vmspace->as_heapvtop),amount);
+		}
+
+
+	return 0;
+
+}
+
+
+/*
+ * Kernel main. Boot up, then fork the menu thread; wait for a reboot
+ * request, and then shut down.
+ */
+
+
+int
+kmain(char *arguments)
+{
+	boot();
+	hello();
+	menu(arguments);
+	
+	/* Should not get here */
+	return 0;
+}

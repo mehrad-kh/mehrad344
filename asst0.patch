@@ -1,0 +1,216 @@
+Index: kern/include/hello.h
+===================================================================
+--- kern/include/hello.h	(.../tags/asst0-start)	(revision 0)
++++ kern/include/hello.h	(.../trunk)	(revision 13)
+@@ -0,0 +1 @@
++void hello();
+Index: kern/include/syscall.h
+===================================================================
+--- kern/include/syscall.h	(.../tags/asst0-start)	(revision 13)
++++ kern/include/syscall.h	(.../trunk)	(revision 13)
+@@ -6,6 +6,6 @@
+  */
+ 
+ int sys_reboot(int code);
++int sys_write(int file,const void *buf,size_t n);
+ 
+-
+ #endif /* _SYSCALL_H_ */
+Index: kern/main/hello.c
+===================================================================
+--- kern/main/hello.c	(.../tags/asst0-start)	(revision 0)
++++ kern/main/hello.c	(.../trunk)	(revision 13)
+@@ -0,0 +1,5 @@
++#include "hello.h"
++
++void hello(){
++	kprintf("Hello World\n");
++}
+Index: kern/main/main.c
+===================================================================
+--- kern/main/main.c	(.../tags/asst0-start)	(revision 13)
++++ kern/main/main.c	(.../trunk)	(revision 13)
+@@ -16,7 +16,7 @@
+ #include <vm.h>
+ #include <syscall.h>
+ #include <version.h>
+-
++#include <hello.h>
+ /*
+  * These two pieces of data are maintained by the makefiles and build system.
+  * buildconfig is the name of the config file the kernel was configured with.
+@@ -152,6 +152,36 @@
+ }
+ 
+ /*
++ * Write System call
++ */
++
++int sys_write(int file,const void *buf,size_t n){
++  int err=0; 
++  int i=0;
++  if(buf==NULL){
++    //buffer was pointing to NULL 
++    return EFAULT;
++  }
++  //alocating memory in kernel space
++  char *str = (char *) kmalloc(sizeof(char)*n);
++  //cheking if memory allocation was successful
++  if (str==NULL)
++    return ENOSPC;
++  // copying data from user space to kernel space
++  err=copyin((const_userptr_t)buf, str, n);
++  // returning the copyin errors
++  if(err)
++    return err;
++  //printing on IO
++  for(i=0;i<n;i++)
++    putch(str[i]);
++  kfree(str);
++  //returning successful
++  return 0; 
++
++}
++
++/*
+  * Kernel main. Boot up, then fork the menu thread; wait for a reboot
+  * request, and then shut down.
+  */
+@@ -159,9 +189,9 @@
+ kmain(char *arguments)
+ {
+ 	boot();
+-
++	hello();
+ 	menu(arguments);
+-
++	
+ 	/* Should not get here */
+ 	return 0;
+ }
+Index: kern/main/menu.c
+===================================================================
+--- kern/main/menu.c	(.../tags/asst0-start)	(revision 13)
++++ kern/main/menu.c	(.../trunk)	(revision 13)
+@@ -150,6 +150,60 @@
+ 	return common_prog(nargs, args);
+ }
+ 
++static const char *dbflagsmenu[] = {
++	"[df 1 on/off]       DB_LOCORE       ",
++	"[df 2 on/off]       DB_SYSCALL      ",
++        "[df 3 on/off]       DB_INTERRUPT    ",
++	"[df 4 on/off]       DB_DEVICE       ",
++	"[df 5 on/off]       DB_THREADS      ",
++	"[df 6 on/off]       DB_VM           ",
++	"[df 7 on/off]       DB_EXEC         ",
++	"[df 8 on/off]       DB_VFS          ",
++	"[df 9 on/off]       DB_SFS          ",
++	"[df 10 on/off]      DB_NET          ",
++	"[df 11 on/off]      DB_NETFS        ",
++	"[df 12 on/off]      DB_KMALLOC       ",
++	NULL
++};
++
++static
++int
++cmd_dbflags (int nargs, char **args)
++{
++        showmenu("OS/161 Debug flags", dbflagsmenu);
++	kprintf("Current value of dbflags is 0x%x\n", dbflags);
++        return 0;
++}
++
++static
++int
++cmd_setdbflags (int nargs, char **args)
++{
++
++	if (nargs!=3){
++		kprintf("Usage: df nr on/off\n");
++		return 0;
++	}
++
++	u_int32_t flag_bit = atoi(args[1]);
++
++        if (flag_bit == 0 || flag_bit > 12 ){
++		kprintf("Usage: df nr on/off\n");
++		return 0;
++	}
++
++        u_int32_t temp = 1;
++	temp <<= (flag_bit-1);
++	if (!strcmp(args[2], "on"))
++		dbflags = dbflags | temp;
++	else if (!strcmp(args[2], "off"))
++		dbflags = dbflags & ~temp;
++	else
++		kprintf("Usage: df nr on/off\n");
++
++	return 0;	
++}
++
+ /*
+  * Command for changing directory.
+  */
+@@ -379,9 +433,11 @@
+ static const char *opsmenu[] = {
+ 	"[s]       Shell                     ",
+ 	"[p]       Other program             ",
++        "[dbflags] Debug flags               ",
++	//"[df]      Debug flags               ",
+ 	"[mount]   Mount a filesystem        ",
+ 	"[unmount] Unmount a filesystem      ",
+-	"[bootfs]  Set \"boot\" filesystem     ",
++	"[bootfs]  Set \"boot\" filesystem   ",
+ 	"[pf]      Print a file              ",
+ 	"[cd]      Change directory          ",
+ 	"[pwd]     Print current directory   ",
+@@ -391,6 +447,8 @@
+ 	NULL
+ };
+ 
++
++
+ static
+ int
+ cmd_opsmenu(int n, char **a)
+@@ -484,6 +542,8 @@
+ 	/* operations */
+ 	{ "s",		cmd_shell },
+ 	{ "p",		cmd_prog },
++	{ "dbflags",	cmd_dbflags },
++	{ "df",         cmd_setdbflags },  
+ 	{ "mount",	cmd_mount },
+ 	{ "unmount",	cmd_unmount },
+ 	{ "bootfs",	cmd_bootfs },
+Index: kern/conf/conf.kern
+===================================================================
+--- kern/conf/conf.kern	(.../tags/asst0-start)	(revision 13)
++++ kern/conf/conf.kern	(.../trunk)	(revision 13)
+@@ -371,8 +371,9 @@
+ #
+ 
+ file      main/main.c
++file 	  main/hello.c
+ file      main/menu.c
+-
++file	  main/hello.c
+ #
+ # User-level programming/system call support
+ # (you will probably want to add stuff here while doing the basic system
+Index: kern/arch/mips/mips/syscall.c
+===================================================================
+--- kern/arch/mips/mips/syscall.c	(.../tags/asst0-start)	(revision 13)
++++ kern/arch/mips/mips/syscall.c	(.../trunk)	(revision 13)
+@@ -71,7 +71,9 @@
+ 	    case SYS_reboot:
+ 		err = sys_reboot(tf->tf_a0);
+ 		break;
+-
++	    case SYS_write:
++	        err= sys_write(tf->tf_a0,tf->tf_a1,tf->tf_a2);
++	        break;
+ 	    /* Add stuff here */
+  
+ 	    default:

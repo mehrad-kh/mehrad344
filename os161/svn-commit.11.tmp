@@ -1,0 +1,7 @@
+
+--This line, and those below, will be ignored--
+
+M    kern/arch/mips/mips/trap.c
+M    kern/lib/hashtable.c
+M    kern/thread/thread.c
+M    testbin/forkbomb/forkbomb.c

@@ -1,0 +1,8 @@
+
+--This line, and those below, will be ignored--
+
+M    kern/include/syscall.h
+M    kern/include/hashtable.h
+M    kern/main/main.c
+M    kern/thread/thread.c
+M    kern/arch/mips/mips/syscall.c

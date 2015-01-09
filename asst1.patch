@@ -1,0 +1,1287 @@
+Index: kern/include/thread.h
+===================================================================
+--- kern/include/thread.h	(.../tags/asst1-start)	(revision 45)
++++ kern/include/thread.h	(.../trunk)	(revision 45)
+@@ -37,6 +37,7 @@
+ 	 * and is manipulated by the virtual filesystem (VFS) code.
+ 	 */
+ 	struct vnode *t_cwd;
++
+ };
+ 
+ /* Call once during startup to allocate data structures. */
+Index: kern/include/queue.h
+===================================================================
+--- kern/include/queue.h	(.../tags/asst1-start)	(revision 45)
++++ kern/include/queue.h	(.../trunk)	(revision 45)
+@@ -27,6 +27,7 @@
+ int           q_addtail(struct queue *, void *ptr);
+ void         *q_remhead(struct queue *);
+ void          q_destroy(struct queue *);
++void 		 *get_head(struct queue *);
+ 
+ /* 
+  * These are really intended only for debugging. Using them encodes 
+Index: kern/include/synch.h
+===================================================================
+--- kern/include/synch.h	(.../tags/asst1-start)	(revision 45)
++++ kern/include/synch.h	(.../trunk)	(revision 45)
+@@ -5,6 +5,9 @@
+ #ifndef _SYNCH_H_
+ #define _SYNCH_H_
+ 
++#include <types.h>
++#include <queue.h>
++
+ /*
+  * Dijkstra-style semaphore.
+  * Operations:
+@@ -50,8 +53,11 @@
+ 
+ struct lock {
+ 	char *name;
++	volatile int state;
++	volatile void* id;
+ 	// add what you need here
+ 	// (don't forget to mark things volatile as needed)
++	volatile u_int64_t busy;
+ };
+ 
+ struct lock *lock_create(const char *name);
+@@ -89,8 +95,11 @@
+ 
+ struct cv {
+ 	char *name;
++	volatile struct lock* lock;
++	struct queue* sleepers_array;
+ 	// add what you need here
+ 	// (don't forget to mark things volatile as needed)
++	struct queue* slept_threads;
+ };
+ 
+ struct cv *cv_create(const char *name);
+Index: kern/lib/queue.c
+===================================================================
+--- kern/lib/queue.c	(.../tags/asst1-start)	(revision 45)
++++ kern/lib/queue.c	(.../trunk)	(revision 45)
+@@ -120,6 +120,16 @@
+ 	return ret;
+ }
+ 
++void *
++get_head(struct queue *q)
++{
++	void *ret;
++	assert(q->size > 0);
++	assert(!q_empty(q));
++	ret = q->data[q->nextread];
++    return ret;
++}
++
+ void
+ q_destroy(struct queue *q)
+ {
+Index: kern/thread/synch.c
+===================================================================
+--- kern/thread/synch.c	(.../tags/asst1-start)	(revision 45)
++++ kern/thread/synch.c	(.../trunk)	(revision 45)
+@@ -9,6 +9,7 @@
+ #include <thread.h>
+ #include <curthread.h>
+ #include <machine/spl.h>
++ #include <queue.h>
+ 
+ ////////////////////////////////////////////////////////////
+ //
+@@ -78,6 +79,7 @@
+ 		thread_sleep(sem);
+ 	}
+ 	assert(sem->count>0);
++	//kprintf("locked %s\n",sem->name);
+ 	sem->count--;
+ 	splx(spl);
+ }
+@@ -89,6 +91,7 @@
+ 	assert(sem != NULL);
+ 	spl = splhigh();
+ 	sem->count++;
++	//kprintf("unlocked %s\n",sem->name);
+ 	assert(sem->count>0);
+ 	thread_wakeup(sem);
+ 	splx(spl);
+@@ -114,7 +117,7 @@
+ 		return NULL;
+ 	}
+ 	
+-	// add stuff here as needed
++	lock->busy = 0;
+ 	
+ 	return lock;
+ }
+@@ -124,8 +127,13 @@
+ {
+ 	assert(lock != NULL);
+ 
+-	// add stuff here as needed
++	int spl;
+ 	
++	spl = splhigh();
++	assert(thread_hassleepers(lock)==0);
++	splx(spl);
++
++	
+ 	kfree(lock->name);
+ 	kfree(lock);
+ }
+@@ -133,27 +141,48 @@
+ void
+ lock_acquire(struct lock *lock)
+ {
+-	// Write this
++	int spl;
++	assert(lock  != NULL);
+ 
+-	(void)lock;  // suppress warning until code gets written
++    // disabling interrupts
++	spl = splhigh();
++	while (lock->busy != 0){
++		thread_sleep(lock);
++	}
++	/* Assigning current thread id to lock variable so we can later determine
++	 * if some locks are holding by the current thread or not 
++	 */  
++	lock->busy = curthread;
++	splx(spl);
+ }
+ 
+ void
+ lock_release(struct lock *lock)
+ {
+-	// Write this
++	int spl;
++	assert(lock != NULL);
+ 
+-	(void)lock;  // suppress warning until code gets written
++	spl = splhigh();
++	// Freeing the lock
++	lock->busy = 0;		
++	/* 
++	 * Sending all threads waiting for the lock to the run queue
++	 * so scheduler will able can dispatch them later. 
++	 */
++	thread_wakeup(lock);
++	splx(spl);
+ }
+ 
+ int
+ lock_do_i_hold(struct lock *lock)
+ {
+-	// Write this
++	assert(lock != NULL);
++	//int spl = splhigh();
++	if (lock->busy == curthread)
++		return 1;
++	//splx(spl);
+ 
+-	(void)lock;  // suppress warning until code gets written
+-
+-	return 1;    // dummy until code gets written
++	return 0;
+ }
+ 
+ ////////////////////////////////////////////////////////////
+@@ -177,7 +206,10 @@
+ 		return NULL;
+ 	}
+ 	
+-	// add stuff here as needed
++	cv->slept_threads = q_create(10);
++	if (cv->slept_threads == NULL) {
++		return NULL;
++	}
+ 	
+ 	return cv;
+ }
+@@ -186,33 +218,52 @@
+ cv_destroy(struct cv *cv)
+ {
+ 	assert(cv != NULL);
++    
++    //int spl = splhigh();
+ 
+-	// add stuff here as needed
++	q_destroy(cv->slept_threads);
+ 	
+ 	kfree(cv->name);
+ 	kfree(cv);
++	//splx(spl);
+ }
+ 
+ void
+ cv_wait(struct cv *cv, struct lock *lock)
+ {
+-	// Write this
+-	(void)cv;    // suppress warning until code gets written
+-	(void)lock;  // suppress warning until code gets written
++	/*Interrupt should be disabled before calling cv_wait*/
++	assert(cv != NULL && lock != NULL);
++	int spl = splhigh();
++
++	q_addtail(cv->slept_threads, curthread);  //push the address of current thread id into corresponding cv_queue  
++	lock_release(lock);		//releasing lock
++	thread_sleep(curthread);		//thread sleeps on its own address
++
++	splx(spl);
++	lock_acquire (lock);	
+ }
+ 
+ void
+ cv_signal(struct cv *cv, struct lock *lock)
+ {
+-	// Write this
+-	(void)cv;    // suppress warning until code gets written
+-	(void)lock;  // suppress warning until code gets written
++	/* Wake up one thread that's sleeping on this CV. */
++	assert(cv != NULL && lock != NULL);
++	int spl = splhigh();
++	void* addr = q_remhead(cv->slept_threads);
++	thread_wakeup(addr);
++	splx(spl);
+ }
+ 
+ void
+ cv_broadcast(struct cv *cv, struct lock *lock)
+ {
+-	// Write this
+-	(void)cv;    // suppress warning until code gets written
+-	(void)lock;  // suppress warning until code gets written
++	/*Wake up all threads sleeping on this CV.*/
++	assert(cv != NULL && lock != NULL);
++	int spl = splhigh();
++	void* addr;
++	while (!q_empty(cv->slept_threads)) {
++		addr = q_remhead(cv->slept_threads);
++		thread_wakeup(addr);
++	}
++	splx(spl);
+ }
+Index: kern/thread/thread.c
+===================================================================
+--- kern/thread/thread.c	(.../tags/asst1-start)	(revision 45)
++++ kern/thread/thread.c	(.../trunk)	(revision 45)
+@@ -58,6 +58,7 @@
+ 	thread->t_vmspace = NULL;
+ 
+ 	thread->t_cwd = NULL;
++
+ 	
+ 	// If you add things to the thread structure, be sure to initialize
+ 	// them here.
+Index: kern/asst1/stoplight.c
+===================================================================
+--- kern/asst1/stoplight.c	(.../tags/asst1-start)	(revision 45)
++++ kern/asst1/stoplight.c	(.../trunk)	(revision 45)
+@@ -6,41 +6,32 @@
+  * NB: You can use any synchronization primitives available to solve
+  * the stoplight problem in this file.
+  */
+-
+-
+ /*
+  * 
+  * Includes
+  *
+  */
+-
+ #include <types.h>
+ #include <lib.h>
+ #include <test.h>
+ #include <thread.h>
+-
+-
++#include <synch.h>
+ /*
+  *
+  * Constants
+  *
+  */
+-
+ /*
+  * Number of cars created.
+  */
+-
+ #define NCARS 20
+-
+-
+ /*
+  *
+  * Function Definitions
+  *
+  */
+-
+ static const char *directions[] = { "N", "E", "S", "W" };
+-
++enum { N_W, N_E , S_E, S_W };
+ static const char *msgs[] = {
+         "approaching:",
+         "region1:    ",
+@@ -48,10 +39,19 @@
+         "region3:    ",
+         "leaving:    "
+ };
+-
+ /* use these constants for the first parameter of message */
+ enum { APPROACHING, REGION1, REGION2, REGION3, LEAVING };
+-
++struct intersection{
++	struct semaphore * NE;
++	struct semaphore * NW;
++	struct semaphore * SE;
++	struct semaphore * SW;
++	struct semaphore * staus;
++	struct queue ** waitlist;
++    	struct semaphore ** waitlist_lock;
++	int carnumber;
++	int carleaving;
++};
+ static void
+ message(int msg_nr, int carnumber, int cardirection, int destdirection)
+ {
+@@ -59,14 +59,43 @@
+                 msgs[msg_nr], carnumber,
+                 directions[cardirection], directions[destdirection]);
+ }
++/*static void
++atomic_enqueue(struct queue * waitlist, void* carnumber, int cardirection, int destdirection)
++{
++    //P(waitlist_lock);
++    q_addtail(waitlist, carnumber);
++    //message(APPROACHING, *(int *)carnumber, cardirection, destdirection);
++    //V(waitlist_lock);
++}
++static void
++atomic_dequeue(struct queue * waitlist, struct semaphore * waitlist_lock)
++{
++    void * ret = q_remhead(waitlist);
++    kprintf("car: %d entered the intersection and removed from waitlist\n",*(int *)ret);
+  
++}*/
++static int
++is_in_order (struct queue * waitlist, void *carnumber)
++{
++  
++    if (q_empty(waitlist))
++    {
++        return 1;
++    }
++    if (q_getguy(waitlist, q_getstart(waitlist)) == carnumber)
++    {
++        return 1; 
++    }
++    return 0;
++}
++ 
+ /*
+  * gostraight()
+  *
+  * Arguments:
+  *      unsigned long cardirection: the direction from which the car
+  *              approaches the intersection.
+- *      unsigned long carnumber: the car id number for printing purposes.
++ *      APPROACHINGunsigned long carnumber: the car id number for printing purposes.
+  *
+  * Returns:
+  *      nothing.
+@@ -76,21 +105,182 @@
+  *      intersection from any direction.
+  *      Write and comment this function.
+  */
+-
+ static
+ void
+-gostraight(unsigned long cardirection,
++gostraight(void * INTERSECTION,unsigned long cardirection,
+            unsigned long carnumber)
+ {
++	struct intersection * intersection= INTERSECTION;
++	int region=0;
+         /*
+          * Avoid unused variable warnings.
+          */
+-        
+-        (void) cardirection;
+-        (void) carnumber;
++	P(intersection->staus);
++	q_addtail(intersection->waitlist[cardirection], &carnumber);
++	message(APPROACHING, carnumber, cardirection,(cardirection+2)%4);
++	V(intersection->staus);
++	while( region<2)
++	{
++		if(cardirection==0)
++		{
++			if (region==0)
++			{
++				P(intersection->NW);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_W], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->NW);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[N_W]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 2);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->SW);
++				message(REGION2, carnumber, cardirection, 2);
++				V(intersection->NW);
++				region++;
++				//message(REGION2, carnumber, cardirection, 2);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 2);
++				V(intersection->SW);
++			}
++		}
++		else if(cardirection==1)
++		{
++			if (region==0)
++			{
++				P(intersection->NE);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_E], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->NE);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[N_E]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 3);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->NW);
++				message(REGION2, carnumber, cardirection, 3);
++				V(intersection->NE);
++				region++;
++				//message(REGION2, carnumber, cardirection, 3);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 3);
++				V(intersection->NW);
++			}
++			
++		}
++		else if(cardirection==2)
++		{
++			if (region==0)
++			{
++				P(intersection->SE);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_E], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->SE);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[S_E]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 0);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->NE);
++				message(REGION2, carnumber, cardirection, 0);
++				V(intersection->SE);
++				region++;
++				//message(REGION2, carnumber, cardirection, 0);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection,0);
++				V(intersection->NE);
++			}
++			
++		}
++		else if(cardirection==3)
++		{
++			if (region==0)
++			{
++				P(intersection->SW);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_W], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->SW);
++					
++				}
++					
++				else
++				{
++					q_remhead(intersection->waitlist[S_W]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 1);
++				}
++			
++			}
++			else if (region==1)
++			{
++				P(intersection->SE);
++				message(REGION2, carnumber, cardirection, 1);
++				V(intersection->SW);
++				region++;
++				//message(REGION2, carnumber, cardirection, 1);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 1);
++				V(intersection->SE);
++			}
++		}
++	}
++       
++     //kprintf("car died%d tiil now %d \n",carnumber,intersection->carleaving);  
+ }
+-
+-
+ /*
+  * turnleft()
+  *
+@@ -107,21 +297,216 @@
+  *      intersection from any direction.
+  *      Write and comment this function.
+  */
+-
+ static
+ void
+-turnleft(unsigned long cardirection,
++turnleft(void * INTERSECTION, unsigned long cardirection,
+          unsigned long carnumber)
+ {
++	struct intersection * intersection= INTERSECTION;
+         /*
+          * Avoid unused variable warnings.
+          */
+-
+-        (void) cardirection;
+-        (void) carnumber;
++	int region=0;
++	P(intersection->staus);
++	q_addtail(intersection->waitlist[cardirection], &carnumber);
++	message(APPROACHING, carnumber, cardirection,(cardirection+1)%4);
++	V(intersection->staus);
++	while( region<3)
++	{
++		if(cardirection==0)
++		{
++			if (region==0)
++			{	
++				P(intersection->NW);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_W], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->NW);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[N_W]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 1);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->SW);
++				message(REGION2, carnumber, cardirection, 1);
++				V(intersection->NW);
++				region++;
++				//message(REGION2, carnumber, cardirection, 1);
++			}
++			else
++			{
++				P(intersection->SE);
++				message(REGION3, carnumber, cardirection, 1);
++				V(intersection->SW);
++				region++;
++				//message(REGION3, carnumber, cardirection, 1);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 1);
++				
++				V(intersection->SE);		
++			}
++		}
++		else if(cardirection==1)
++		{
++			if (region==0)
++			{
++				P(intersection->NE);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_E], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->NE);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[N_E]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 2);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->NW);
++				message(REGION2, carnumber, cardirection, 2);
++				V(intersection->NE);
++				region++;
++				//message(REGION2, carnumber, cardirection, 2);
++			}
++			else
++			{
++				P(intersection->SW);
++				message(REGION3, carnumber, cardirection, 2);
++				V(intersection->NW);
++				region++;
++				//message(REGION3, carnumber, cardirection, 2);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 2);
++				
++				V(intersection->SW);		
++			}
++		}
++		else if(cardirection==2)
++		{
++			if (region==0)
++			{
++				P(intersection->SE);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_E], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->SE);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[S_E]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 3);
++				}
++				
++			}
++			else if (region==1)
++			{
++				P(intersection->NE);
++				message(REGION2, carnumber, cardirection, 3);
++				V(intersection->SE);
++				region++;
++				//message(REGION2, carnumber, cardirection, 3);
++			
++			}
++			else
++			{
++				P(intersection->NW);
++				message(REGION3, carnumber, cardirection, 3);
++				V(intersection->NE);
++				region++;
++				//message(REGION3, carnumber, cardirection, 3);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 3);
++				
++				V(intersection->NW);	
++			}
++		}
++		else if(cardirection==3)
++		{
++			if (region==0)
++			{
++				P(intersection->SW);
++				P(intersection->staus);
++				if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_W], &carnumber)  )
++				{	
++					
++					V(intersection->staus);
++					V(intersection->SW);
++					
++				}
++					
++				else{
++					q_remhead(intersection->waitlist[S_W]);
++					intersection->carnumber++;
++					V(intersection->staus);
++					region++;
++					message(REGION1, carnumber, cardirection, 0);
++				}
++			}
++			else if (region==1)
++			{
++				P(intersection->SE);
++				message(REGION2, carnumber, cardirection, 0);
++				V(intersection->SW);
++				region++;
++				//message(REGION2, carnumber, cardirection, 0);
++			}
++			else
++			{
++				P(intersection->NE);
++				message(REGION3, carnumber, cardirection, 0);
++				V(intersection->SE);
++				region++;
++				//message(REGION3, carnumber, cardirection, 0);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection,0);
++				
++				V(intersection->NE);	
++			}
++		}
++	}
++	//kprintf("car died%d tiil now %d \n",carnumber,intersection->carleaving); 
++       
+ }
+-
+-
+ /*
+  * turnright()
+  *
+@@ -138,21 +523,139 @@
+  *      intersection from any direction.
+  *      Write and comment this function.
+  */
+-
+ static
+ void
+-turnright(unsigned long cardirection,
++turnright(void * INTERSECTION, unsigned long cardirection,
+           unsigned long carnumber)
+ {
++        struct intersection * intersection= INTERSECTION;
+         /*
+          * Avoid unused variable warnings.
+          */
+-
+-        (void) cardirection;
+-        (void) carnumber;
++	int done=0;
++	P(intersection->staus);
++	q_addtail(intersection->waitlist[cardirection], &carnumber);
++	message(APPROACHING, carnumber, cardirection,(cardirection+3)%4);
++	V(intersection->staus);
++	while(!done)
++	{
++		if(cardirection==0)
++		{
++			P(intersection->NW);
++			P(intersection->staus);
++			if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_W], &carnumber)  )
++			{	
++					
++				V(intersection->staus);
++				V(intersection->NW);
++					
++			}
++					
++			else{
++				q_remhead(intersection->waitlist[N_W]);
++				intersection->carnumber++;
++				V(intersection->staus);
++				message(REGION1, carnumber, cardirection, 3);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				V(intersection->staus);
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				message(LEAVING, carnumber, cardirection, 3);
++				done=1;
++				
++				V(intersection->NW);
++			}
++				
++		}
++		else if(cardirection==1)
++		{
++			P(intersection->NE);
++			P(intersection->staus);
++			if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[N_E], &carnumber)  )
++			{	
++				
++				V(intersection->staus);
++				V(intersection->NE);
++				
++			}
++				
++			else{
++				q_remhead(intersection->waitlist[N_E]);
++				intersection->carnumber++;
++				V(intersection->staus);
++				message(REGION1, carnumber, cardirection, 0);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 0);
++				done=1;
++				
++				V(intersection->NE);
++			}
++		
++		}
++		else if(cardirection==2)
++		{
++			P(intersection->SE);
++			P(intersection->staus);
++			if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_E], &carnumber)  )
++			{	
++				
++				V(intersection->staus);
++				V(intersection->SE);
++				
++			}
++				
++			else{
++				q_remhead(intersection->waitlist[S_E]);
++				intersection->carnumber++;
++				V(intersection->staus);
++				message(REGION1, carnumber, cardirection, 1);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection,1);
++				done=1;
++				
++				V(intersection->SE);
++			}
++		}
++		else if(cardirection==3)
++		{
++			P(intersection->SW);
++			P(intersection->staus);
++			if (intersection->carnumber>2 || !is_in_order (intersection->waitlist[S_W], &carnumber)  )
++			{	
++				
++				V(intersection->staus);
++				V(intersection->SW);
++				
++			}
++				
++			else{
++				q_remhead(intersection->waitlist[S_W]);
++				intersection->carnumber++;
++				V(intersection->staus);
++				message(REGION1, carnumber, cardirection, 2);
++				P(intersection->staus);
++				intersection->carnumber--;
++				intersection->carleaving++;
++				//kprintf("WITH THIS %d\n",intersection->carleaving);
++				V(intersection->staus);
++				message(LEAVING, carnumber, cardirection, 2);
++				done=1;
++				V(intersection->SW);
++			}
++		}
++	}
++	//kprintf("car died%d tiil now %d \n",carnumber,intersection->carleaving); 
++       
+ }
+-
+-
+ /*
+  * approachintersection()
+  *
+@@ -164,7 +667,7 @@
+  *      nothing.
+  *
+  * Notes:
+- *      Change this function as necessary to implement your solution. These
++ *      Change this fungostraightction as necessary to implement your solution. These
+  *      threads are created by createcars().  Each one must choose a direction
+  *      randomly, approach the intersection, choose a turn randomly, and then
+  *      complete that turn.  The code to choose a direction randomly is
+@@ -175,29 +678,37 @@
+  
+ static
+ void
+-approachintersection(void * unusedpointer,
++approachintersection(void * INTERSECTION,
+                      unsigned long carnumber)
+ {
+         int cardirection;
+-
++	int destination;
++      
+         /*
+-         * Avoid unused variable and function warnings.
+-         */
+-
+-        (void) unusedpointer;
+-        (void) carnumber;
+-	(void) gostraight;
+-	(void) turnleft;
+-	(void) turnright;
+-
+-        /*
+          * cardirection is set randomly.
+          */
+-
+         cardirection = random() % 4;
++	destination=random() % 3;
++	if (destination==0)
++	{
++	
++		turnright(INTERSECTION,cardirection,carnumber);
++		
++	}
++	else if (destination==1)
++	{
++		
++		turnleft(INTERSECTION,cardirection,carnumber);
++		
++	}
++	else if (destination==2)
++	{
++		
++		gostraight(INTERSECTION,cardirection,carnumber);
++		
++	}
++	
+ }
+-
+-
+ /*
+  * createcars()
+  *
+@@ -212,37 +723,50 @@
+  *      Driver code to start up the approachintersection() threads.  You are
+  *      free to modiy this code as necessary for your solution.
+  */
+-
+ int
+ createcars(int nargs,
+            char ** args)
+ {
+         int index, error;
+-
++	struct intersection * INTERSECTION= (struct intersection *) kmalloc(sizeof(struct intersection )) ;
+         /*
+          * Avoid unused variable warnings.
+          */
+-
+         (void) nargs;
+         (void) args;
+-
++	// initialization
++	
++	INTERSECTION->NE=sem_create("NE",1);
++	INTERSECTION->NW=sem_create("NW",1);
++	INTERSECTION->SE=sem_create("SE",1);
++	INTERSECTION->SW=sem_create("SW",1);
++	INTERSECTION->staus=sem_create("status",1);
++	INTERSECTION->carnumber=0;
++	INTERSECTION->carleaving=0;
++   	INTERSECTION->waitlist= (struct queue **)kmalloc (4*sizeof(struct queue *));
++    	INTERSECTION->waitlist_lock = (struct semaphore **)kmalloc(4*sizeof(struct semaphore *));
++    
++    	INTERSECTION->waitlist_lock[N_W] = sem_create("NW_waitlist", 1);
++    	INTERSECTION->waitlist_lock[N_E] = sem_create("NE_waitlist", 1);
++    	INTERSECTION->waitlist_lock[S_E] = sem_create("SE_waitlist", 1);
++    	INTERSECTION->waitlist_lock[S_W] = sem_create("SW_waitlist", 1);
++	int i = 0;
++    	for (i = 0; i < 4; i++){
++        	INTERSECTION->waitlist[i] = q_create(NCARS);
++    	}
+         /*
+          * Start NCARS approachintersection() threads.
+          */
+-
+         for (index = 0; index < NCARS; index++) {
+-
+                 error = thread_fork("approachintersection thread",
+-                                    NULL,
++                                    INTERSECTION,
+                                     index,
+                                     approachintersection,
+                                     NULL
+                                     );
+-
+                 /*
+                  * panic() on error.
+                  */
+-
+                 if (error) {
+                         
+                         panic("approachintersection: thread_fork failed: %s\n",
+@@ -250,6 +774,5 @@
+                               );
+                 }
+         }
+-
+         return 0;
+ }
+Index: kern/asst1/catlock.c
+===================================================================
+--- kern/asst1/catlock.c	(.../tags/asst1-start)	(revision 45)
++++ kern/asst1/catlock.c	(.../trunk)	(revision 45)
+@@ -1,4 +1,4 @@
+-/*
++ /*
+  * catlock.c
+  *
+  * 30-1-2003 : GWA : Stub functions created for CS161 Asst1.
+@@ -18,6 +18,7 @@
+ #include <lib.h>
+ #include <test.h>
+ #include <thread.h>
++#include <synch.h>
+ 
+ 
+ /*
+@@ -45,6 +46,15 @@
+ #define NMICE 2
+ 
+ 
++struct HOUSE {
++    int busycat;
++    int busymouse;
++    int bowls[NFOODBOWLS];
++    struct lock* bowls_lock;
++    //struct lock* kprintf_lock;
++    struct cv* cat_spot;
++    struct cv* mouse_spot;
++};
+ /*
+  * 
+  * Function Definitions
+@@ -55,11 +65,15 @@
+ static void
+ lock_eat(const char *who, int num, int bowl, int iteration)
+ {
++        //lock_acquire(kprintf_lock);
+         kprintf("%s: %d starts eating: bowl %d, iteration %d\n", who, num, 
+                 bowl, iteration);
++        //lock_release(kprintf_lock);
+         clocksleep(1);
++        //lock_acquire(kprintf_lock);
+         kprintf("%s: %d ends eating: bowl %d, iteration %d\n", who, num, 
+                 bowl, iteration);
++       // lock_release(kprintf_lock);
+ }
+ 
+ /*
+@@ -80,17 +94,47 @@
+ 
+ static
+ void
+-catlock(void * unusedpointer, 
++catlock(struct HOUSE* house, 
+         unsigned long catnumber)
+ {
+-        /*
+-         * Avoid unused variable warnings.
+-         */
++    int iteration = 0;
++    while (iteration <= 3)
++    {
++        lock_acquire(house->bowls_lock);
++        while (house->busymouse > 0 || house->busycat == NFOODBOWLS ){
++            //splhigh();
++            cv_wait(house->cat_spot, house->bowls_lock);
++        }
+ 
+-        (void) unusedpointer;
+-        (void) catnumber;
++        int s;
++        int flag = 0;
++        for (s = 0; s < NFOODBOWLS && flag == 0; s++)
++        {
++            if (house->bowls[s] == 0) 
++            {
++                flag = 1;
++                house->bowls[s] = 1;
++                house->busycat++;
++                lock_release(house->bowls_lock);
++                lock_eat("cat", catnumber, s+1, iteration);
++                lock_acquire(house->bowls_lock);
++                iteration++;
++                house->busycat--;
++                house->bowls[s] = 0;
++
++                //int k = splhigh();
++                cv_broadcast(house->cat_spot, house->bowls_lock);
++                if (house->busycat == 0)
++                    cv_broadcast(house->mouse_spot, house->bowls_lock);
++
++                //splx(k);
++
++                lock_release(house->bowls_lock);
++            }
++        }
++    }
+ }
+-	
++    
+ 
+ /*
+  * mouselock()
+@@ -110,15 +154,48 @@
+ 
+ static
+ void
+-mouselock(void * unusedpointer,
++mouselock(struct HOUSE* house,
+           unsigned long mousenumber)
+ {
+-        /*
+-         * Avoid unused variable warnings.
+-         */
+-        
+-        (void) unusedpointer;
+-        (void) mousenumber;
++    int iteration = 0;
++    while(iteration <= 3)
++    {
++
++
++        lock_acquire(house->bowls_lock);
++        while (house->busycat > 0 || house->busymouse == NFOODBOWLS ){
++            //splhigh();
++            cv_wait(house->mouse_spot, house->bowls_lock);
++        }
++
++        int s;
++        int flag = 0;
++    
++        for (s = 0; s < NFOODBOWLS && flag == 0; s++)
++        {
++            if (house->bowls[s] == 0) 
++            {
++                flag = 1;
++                house->bowls[s] = 1;
++                house->busymouse++;
++                lock_release(house->bowls_lock);
++                lock_eat("mouse", mousenumber, s+1, iteration);
++                lock_acquire(house->bowls_lock);
++                iteration++;
++                house->busymouse--;
++                house->bowls[s] = 0;
++
++                //int k = splhigh();
++                cv_broadcast(house->mouse_spot, house->bowls_lock);
++                if (house->busymouse == 0)
++                    cv_broadcast(house->cat_spot, house->bowls_lock);
++
++                //splx(k);
++
++                lock_release(house->bowls_lock);
++            }
++        }
++    }
+ }
+ 
+ 
+@@ -149,7 +226,22 @@
+ 
+         (void) nargs;
+         (void) args;
+-   
++
++
++        /* Initializing Shared Data */
++        struct HOUSE * house = (struct HOUSE *) kmalloc (sizeof(struct HOUSE));
++        house->busycat = 0;
++        house->busymouse = 0;
++
++        int i;
++        for (i = 0; i < NFOODBOWLS; i++)
++            house->bowls[i] = 0;
++
++        house->bowls_lock = lock_create("bowls lock");
++        //house->kprintf_lock = lock_create ("kprintf lock");
++        house->cat_spot = cv_create("cat spot");
++        house->mouse_spot = cv_create("mouse spot");
++        
+         /*
+          * Start NCATS catlock() threads.
+          */
+@@ -157,7 +249,7 @@
+         for (index = 0; index < NCATS; index++) {
+            
+                 error = thread_fork("catlock thread", 
+-                                    NULL, 
++                                    house, 
+                                     index, 
+                                     catlock, 
+                                     NULL
+@@ -182,7 +274,7 @@
+         for (index = 0; index < NMICE; index++) {
+    
+                 error = thread_fork("mouselock thread", 
+-                                    NULL, 
++                                    house, 
+                                     index, 
+                                     mouselock, 
+                                     NULL

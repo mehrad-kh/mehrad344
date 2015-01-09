@@ -1,0 +1,12 @@
+
+--This line, and those below, will be ignored--
+
+M    kern/arch/mips/include/trapframe.h
+M    kern/arch/mips/mips/syscall.c
+M    kern/include/thread.h
+M    kern/include/syscall.h
+M    kern/main/main.c
+M    kern/conf/conf.kern
+M    kern/lib/kgets.c
+M    kern/thread/thread.c
+M    testbin/printf/printf.c

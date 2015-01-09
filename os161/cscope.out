@@ -1,0 +1,534 @@
+cscope 15 /nfs/ug/homes-0/m/moham356/ece344/os161               0000002666
+	@catlock.c
+
+17 
+	~<ty³s.h
+>
+
+18 
+	~<lib.h
+>
+
+19 
+	~<‹¡.h
+>
+
+20 
+	~<th»ad.h
+>
+
+33 
+	#NFOODBOWLS
+ 2
+
+	)
+
+39 
+	#NCATS
+ 6
+
+	)
+
+45 
+	#NMICE
+ 2
+
+	)
+
+48 
+lock
+ 
+	gbowl
+[2];
+
+57 
+	$lock_—t
+(cÚ¡ *
+who
+, 
+num
+, 
+bowl
+, 
+™”©iÚ
+)
+
+59 
+	`k´štf
+("%s: %d s¹ —tšg: bowÈ%d, i‹¿tiÚ %d\n", 
+who
+, 
+num
+,
+
+60 
+bowl
+, 
+™”©iÚ
+);
+
+61 
+	`şock¦“p
+(1);
+
+62 
+	`k´štf
+("%s: %dƒnd —tšg: bowÈ%d, i‹¿tiÚ %d\n", 
+who
+, 
+num
+,
+
+63 
+bowl
+, 
+™”©iÚ
+);
+
+64 
+	}
+}
+
+84 
+	$ÿock
+(* 
+unu£dpoš‹r
+,
+
+85 
+ÿŠumb”
+)
+
+87 
+s
+ = 
+	`¿nd
+()%2;
+
+88 ià(
+bowl
+[0]->
+busy
+ && bowl[1]->busy)
+
+89 
+	`lock_acquœe
+(
+bowl
+[
+s
+]);
+
+91 ià(!
+bowl
+[0]->
+busy
+)
+
+92 
+	`lock_acquœe
+(
+bowl
+[0]);
+
+95 
+	`lock_acquœe
+(
+b
+)
+
+97 (è
+unu£dpoš‹r
+;
+
+98 (è
+ÿŠumb”
+;
+
+99 
+	}
+}
+
+120 
+	$mou£lock
+(* 
+unu£dpoš‹r
+,
+
+121 
+mou£numb”
+)
+
+127 (è
+unu£dpoš‹r
+;
+
+128 (è
+mou£numb”
+;
+
+129 
+	}
+}
+
+148 
+	$ÿtmou£lock
+(
+Çrgs
+,
+
+149 ** 
+¬gs
+)
+
+151 
+šdex
+, 
+”rÜ
+;
+
+157 (è
+Çrgs
+;
+
+158 (è
+¬gs
+;
+
+164 
+šdex
+ = 0; index < 
+NCATS
+; index++) {
+
+166 
+”rÜ
+ = 
+	`th»ad_fÜk
+("catlockhread",
+
+167 
+NULL
+,
+
+168 
+šdex
+,
+
+169 
+ÿock
+,
+
+170 
+NULL
+
+
+177 ià(
+”rÜ
+) {
+
+179 
+	`·nic
+("catlock:hread_fork failed: %s\n",
+
+180 
+	`¡»¼Ü
+(
+”rÜ
+)
+
+189 
+šdex
+ = 0; index < 
+NMICE
+; index++) {
+
+191 
+”rÜ
+ = 
+	`th»ad_fÜk
+("mouselockhread",
+
+192 
+NULL
+,
+
+193 
+šdex
+,
+
+194 
+mou£lock
+,
+
+195 
+NULL
+
+
+202 ià(
+”rÜ
+) {
+
+204 
+	`·nic
+("mouselock:hread_fork failed: %s\n",
+
+205 
+	`¡»¼Ü
+(
+”rÜ
+)
+
+211 
+	}
+}
+
+	@catsem.c
+
+17 
+	~<ty³s.h
+>
+
+18 
+	~<lib.h
+>
+
+19 
+	~<‹¡.h
+>
+
+20 
+	~<th»ad.h
+>
+
+33 
+	#NFOODBOWLS
+ 2
+
+	)
+
+39 
+	#NCATS
+ 6
+
+	)
+
+45 
+	#NMICE
+ 2
+
+	)
+
+56 
+	$£m_—t
+(cÚ¡ *
+who
+, 
+num
+, 
+bowl
+, 
+™”©iÚ
+)
+
+58 
+	`k´štf
+("%s: %d s¹ —tšg: bowÈ%d, i‹¿tiÚ %d\n", 
+who
+, 
+num
+,
+
+59 
+bowl
+, 
+™”©iÚ
+);
+
+60 
+	`şock¦“p
+(1);
+
+61 
+	`k´štf
+("%s: %dƒnd —tšg: bowÈ%d, i‹¿tiÚ %d\n", 
+who
+, 
+num
+,
+
+62 
+bowl
+, 
+™”©iÚ
+);
+
+63 
+	}
+}
+
+82 
+	$ÿt£m
+(* 
+unu£dpoš‹r
+,
+
+83 
+ÿŠumb”
+)
+
+89 (è
+unu£dpoš‹r
+;
+
+90 (è
+ÿŠumb”
+;
+
+91 
+	}
+}
+
+112 
+	$mou££m
+(* 
+unu£dpoš‹r
+,
+
+113 
+mou£numb”
+)
+
+119 (è
+unu£dpoš‹r
+;
+
+120 (è
+mou£numb”
+;
+
+121 
+	}
+}
+
+140 
+	$ÿtmou££m
+(
+Çrgs
+,
+
+141 ** 
+¬gs
+)
+
+143 
+šdex
+, 
+”rÜ
+;
+
+149 (è
+Çrgs
+;
+
+150 (è
+¬gs
+;
+
+156 
+šdex
+ = 0; index < 
+NCATS
+; index++) {
+
+158 
+”rÜ
+ = 
+	`th»ad_fÜk
+("catsem Thread",
+
+159 
+NULL
+,
+
+160 
+šdex
+,
+
+161 
+ÿt£m
+,
+
+162 
+NULL
+
+
+169 ià(
+”rÜ
+) {
+
+171 
+	`·nic
+("catsem:hread_fork failed: %s\n",
+
+172 
+	`¡»¼Ü
+(
+”rÜ
+)
+
+181 
+šdex
+ = 0; index < 
+NMICE
+; index++) {
+
+183 
+”rÜ
+ = 
+	`th»ad_fÜk
+("mousesem Thread",
+
+184 
+NULL
+,
+
+185 
+šdex
+,
+
+186 
+mou££m
+,
+
+187 
+NULL
+
+
+194 ià(
+”rÜ
+) {
+
+196 
+	`·nic
+("mousesem:hread_fork failed: %s\n",
+
+197 
+	`¡»¼Ü
+(
+”rÜ
+)
+
+203 
+	}
+}
+
+	@
+1
+.
+1
+/usr/include
+2
+19
+catlock.c
+catsem.c

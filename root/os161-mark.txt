@@ -1,0 +1,12 @@
+palin, 4, 4
+crash, 13, 13
+add, 5, 5
+argtest, 8, 8
+sty, 10, 10
+stacktest, 5, 5
+bigprog, 10, 10
+triplebigprog, 20, 20
+malloctest1, 5, 5
+malloctest5, 10, 10
+crasho, 10, 10
+vectormult, 25, 25
